@@ -127,6 +127,14 @@ data/gaps.csv
 
 This file is important for backtesting because failed polls create unrecoverable holes in the order book history.
 
+Each capture run also writes:
+
+```text
+run_summary.json
+```
+
+This includes row counts, batch counts, error counts, zero-row batch counts, and run duration.
+
 ## Kalshi Environments
 
 Demo REST API:
@@ -219,6 +227,8 @@ Inspect a capture output directory:
 ```bash
 python scripts/inspect_capture.py exports/smoke_one_ticker
 ```
+
+The inspector reports row counts, ticker counts, category/date partitions, gap events, run summary values, and simple depth/spread metrics.
 
 Run one read-only production order book capture cycle:
 

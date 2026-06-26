@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import sys
 from pathlib import Path
+import json
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -153,6 +154,7 @@ def check_capture_inspector() -> None:
     write_orderbook_rows(output_dir, rows, discovery.ticker_categories)
     gap_logger = GapLogger(output_dir)
     gap_logger.log("startup", "test")
+    (output_dir / "run_summary.json").write_text(json.dumps({"rows": 1, "zero_row_batches": 0}) + "\n")
 
     summary = inspect_capture(output_dir)
     assert summary.orderbook_files == 1
@@ -160,6 +162,11 @@ def check_capture_inspector() -> None:
     assert summary.tickers == {"T1"}
     assert summary.categories == {"Sports"}
     assert summary.dates == {"2026-06-26"}
+    assert len(summary.snapshots) == 1
+    assert summary.total_size == 100
+    assert summary.total_top_level_size == 100
+    assert summary.run_summary["rows"] == 1
+    assert summary.run_summary["zero_row_batches"] == 0
     assert summary.gap_events["startup"] == 1
 
 

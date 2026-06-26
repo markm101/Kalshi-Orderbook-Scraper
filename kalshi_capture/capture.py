@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+import json
 
 import httpx
 
@@ -17,11 +18,16 @@ from kalshi_capture.storage import write_metadata, write_orderbook_rows
 
 @dataclass
 class CaptureStats:
+    started_ts_ms: int = 0
+    ended_ts_ms: int = 0
+    tracked_tickers: int = 0
+    tracked_categories: int = 0
     cycles: int = 0
     batches: int = 0
     rows: int = 0
     errors: int = 0
     missing_tickers: int = 0
+    zero_row_batches: int = 0
 
 
 def run_capture(
@@ -31,7 +37,7 @@ def run_capture(
 ) -> None:
     should_stop = stop_requested or (lambda: False)
     gap_logger = GapLogger(config.output_dir)
-    stats = CaptureStats()
+    stats = CaptureStats(started_ts_ms=int(time.time() * 1000))
     gap_logger.log("startup", "capture started")
 
     try:
@@ -41,6 +47,7 @@ def run_capture(
             logging.warning("no markets matched discovery filters")
             return
 
+        _update_tracked_counts(discovery, stats)
         write_metadata(config.output_dir, discovery)
 
         if config.once:
@@ -54,6 +61,7 @@ def run_capture(
             cycle_start = time.monotonic()
             if time.monotonic() >= next_discovery_refresh:
                 discovery = _discover(config, client, gap_logger)
+                _update_tracked_counts(discovery, stats)
                 write_metadata(config.output_dir, discovery)
                 next_discovery_refresh = time.monotonic() + config.discovery_refresh_seconds
 
@@ -66,6 +74,8 @@ def run_capture(
             elapsed = time.monotonic() - cycle_start
             _sleep_interruptibly(max(0.0, config.interval - elapsed), should_stop, stop_at)
     finally:
+        stats.ended_ts_ms = int(time.time() * 1000)
+        _write_run_summary(config, stats)
         gap_logger.log("shutdown", "capture stopped")
 
 
@@ -105,6 +115,10 @@ def _capture_cycle(
         try:
             batch = fetch_orderbook_batch(client, chunk, capture_ts_ms, max_levels=config.max_levels)
             _log_missing_tickers(chunk, batch.returned_tickers, gap_logger, stats)
+            if not batch.rows:
+                gap_logger.log("zero_rows", f"no orderbook levels returned for tickers={','.join(chunk)}")
+                stats.zero_row_batches += 1
+                logging.warning("orderbook batch returned zero rows tickers=%s", chunk)
             write_orderbook_rows(config.output_dir, batch.rows, categories)
             stats.batches += 1
             stats.rows += len(batch.rows)
@@ -140,7 +154,7 @@ def _log_missing_tickers(
 def _log_heartbeat(discovery: DiscoveryResult, stats: CaptureStats) -> None:
     categories = {item.sanitized_category for item in discovery.series}
     logging.info(
-        "heartbeat tracked_tickers=%s categories=%s cycles=%s batches=%s rows=%s errors=%s missing_tickers=%s",
+        "heartbeat tracked_tickers=%s categories=%s cycles=%s batches=%s rows=%s errors=%s missing_tickers=%s zero_row_batches=%s",
         len(discovery.markets),
         len(categories),
         stats.cycles,
@@ -148,7 +162,24 @@ def _log_heartbeat(discovery: DiscoveryResult, stats: CaptureStats) -> None:
         stats.rows,
         stats.errors,
         stats.missing_tickers,
+        stats.zero_row_batches,
     )
+
+
+def _update_tracked_counts(discovery: DiscoveryResult, stats: CaptureStats) -> None:
+    stats.tracked_tickers = len(discovery.markets)
+    stats.tracked_categories = len({item.sanitized_category for item in discovery.series})
+
+
+def _write_run_summary(config: Config, stats: CaptureStats) -> None:
+    output_path = config.output_dir / "run_summary.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    summary = asdict(stats)
+    summary["duration_ms"] = max(0, stats.ended_ts_ms - stats.started_ts_ms)
+    summary["env"] = config.env
+    summary["interval"] = config.interval
+    summary["max_levels"] = config.max_levels
+    output_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
 
 
 def _duration_elapsed(stop_at: float | None) -> bool:

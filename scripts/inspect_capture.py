@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 from dataclasses import dataclass, field
+import json
 from pathlib import Path
 
 
@@ -16,6 +17,14 @@ class CaptureSummary:
     min_ts_ms: int | None = None
     max_ts_ms: int | None = None
     gap_events: dict[str, int] = field(default_factory=dict)
+    snapshots: set[str] = field(default_factory=set)
+    top_level_rows: int = 0
+    total_top_level_size: int = 0
+    total_size: int = 0
+    spread_count: int = 0
+    min_yes_spread: int | None = None
+    max_yes_spread: int | None = None
+    run_summary: dict[str, object] = field(default_factory=dict)
 
 
 def inspect_capture(output_dir: Path) -> CaptureSummary:
@@ -31,6 +40,7 @@ def inspect_capture(output_dir: Path) -> CaptureSummary:
                 if ticker:
                     summary.tickers.add(ticker)
                 _add_ts(summary, row.get("capture_ts_ms", ""))
+                _add_orderbook_metrics(summary, row)
 
     gap_path = output_dir / "gaps.csv"
     if gap_path.exists():
@@ -40,6 +50,11 @@ def inspect_capture(output_dir: Path) -> CaptureSummary:
                 event_type = row.get("event_type", "") or "unknown"
                 summary.gap_events[event_type] = summary.gap_events.get(event_type, 0) + 1
 
+    run_summary_path = output_dir / "run_summary.json"
+    if run_summary_path.exists():
+        summary.run_summary = json.loads(run_summary_path.read_text())
+
+    _add_spread_metrics(output_dir, summary)
     return summary
 
 
@@ -51,6 +66,17 @@ def print_summary(summary: CaptureSummary) -> None:
     print(f"dates: {', '.join(sorted(summary.dates)) or '(none)'}")
     print(f"first_capture_ts_ms: {summary.min_ts_ms or '(none)'}")
     print(f"last_capture_ts_ms: {summary.max_ts_ms or '(none)'}")
+    print(f"snapshots: {len(summary.snapshots)}")
+    print(f"total_size: {summary.total_size}")
+    print(f"top_level_rows: {summary.top_level_rows}")
+    print(f"total_top_level_size: {summary.total_top_level_size}")
+    print(f"yes_spread_count: {summary.spread_count}")
+    print(f"min_yes_spread: {summary.min_yes_spread if summary.min_yes_spread is not None else '(none)'}")
+    print(f"max_yes_spread: {summary.max_yes_spread if summary.max_yes_spread is not None else '(none)'}")
+    if summary.run_summary:
+        print("run_summary:")
+        for key, value in sorted(summary.run_summary.items()):
+            print(f"  {key}: {value}")
     if summary.gap_events:
         print("gap_events:")
         for event_type, count in sorted(summary.gap_events.items()):
@@ -77,6 +103,52 @@ def _add_ts(summary: CaptureSummary, value: str) -> None:
         summary.min_ts_ms = ts_ms
     if summary.max_ts_ms is None or ts_ms > summary.max_ts_ms:
         summary.max_ts_ms = ts_ms
+
+
+def _add_orderbook_metrics(summary: CaptureSummary, row: dict[str, str]) -> None:
+    snapshot_id = row.get("snapshot_id") or f"{row.get('capture_ts_ms', '')}:{row.get('ticker', '')}"
+    if snapshot_id != ":":
+        summary.snapshots.add(snapshot_id)
+
+    try:
+        size = int(row.get("size", "0"))
+        level = int(row.get("level", "-1"))
+    except ValueError:
+        return
+
+    summary.total_size += size
+    if level == 0:
+        summary.top_level_rows += 1
+        summary.total_top_level_size += size
+
+
+def _add_spread_metrics(output_dir: Path, summary: CaptureSummary) -> None:
+    best_by_snapshot: dict[tuple[str, str], dict[str, int]] = {}
+    for path in sorted((output_dir / "orderbooks").glob("category=*/date=*/orderbook.csv")):
+        with path.open(newline="") as csv_file:
+            reader = csv.DictReader(csv_file)
+            for row in reader:
+                if row.get("level") != "0":
+                    continue
+                snapshot_id = row.get("snapshot_id") or f"{row.get('capture_ts_ms', '')}:{row.get('ticker', '')}"
+                side = row.get("side", "")
+                try:
+                    price = int(row.get("price", ""))
+                except ValueError:
+                    continue
+                best_by_snapshot.setdefault((snapshot_id, row.get("ticker", "")), {})[side] = price
+
+    for sides in best_by_snapshot.values():
+        if "yes" not in sides or "no" not in sides:
+            continue
+        yes_bid = sides["yes"]
+        yes_ask = 10000 - sides["no"]
+        spread = yes_ask - yes_bid
+        summary.spread_count += 1
+        if summary.min_yes_spread is None or spread < summary.min_yes_spread:
+            summary.min_yes_spread = spread
+        if summary.max_yes_spread is None or spread > summary.max_yes_spread:
+            summary.max_yes_spread = spread
 
 
 def build_parser() -> argparse.ArgumentParser:
