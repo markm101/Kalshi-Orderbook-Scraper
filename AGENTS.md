@@ -43,6 +43,7 @@ Scripts:
 scripts/offline_checks.py
 scripts/inspect_capture.py
 scripts/derive_bid_ask.py
+scripts/spread_depth_report.py
 ```
 
 Implemented behavior:
@@ -64,6 +65,7 @@ Implemented behavior:
 - `--once` one-cycle capture
 - `--duration-seconds` timed capture
 - derived bid/ask export
+- spread/depth reporting for derived bid/ask output
 - standard-library inspection and offline checks
 
 ## Kalshi API Facts
@@ -276,6 +278,12 @@ Create derived bid/ask rows:
 python scripts/derive_bid_ask.py exports/short_capture exports/short_capture_derived
 ```
 
+Report spread/depth metrics:
+
+```bash
+python scripts/spread_depth_report.py exports/short_capture_derived --output-csv exports/short_capture_spread_depth.csv
+```
+
 ## Git Hygiene
 
 Ignored local files/directories include:
@@ -304,6 +312,5 @@ Do not commit secrets or generated capture exports.
 
 High-value next tasks:
 
-1. Add spread/depth report scripts for derived bid/ask output.
-2. Add long-run deployment notes for `launchd`, `systemd`, or Docker.
-3. Consider WebSocket capture only if REST polling resolution is insufficient.
+1. Add long-run deployment notes for `launchd`, `systemd`, or Docker.
+2. Consider WebSocket capture only if REST polling resolution is insufficient.

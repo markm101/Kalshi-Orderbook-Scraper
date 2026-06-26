@@ -269,6 +269,25 @@ YES bid -> YES bid and NO ask at 10000 - price
 NO bid  -> NO bid and YES ask at 10000 - price
 ```
 
+## Spread And Depth Report
+
+After creating derived bid/ask rows, summarize tradability by ticker and outcome:
+
+```bash
+python scripts/spread_depth_report.py \
+  exports/short_capture_derived \
+  --output-csv exports/short_capture_spread_depth.csv
+```
+
+The report includes:
+
+- snapshot count
+- spread snapshot count
+- min/average/max spread
+- average best bid and best ask
+- average top-level bid and ask size
+- average total bid and ask depth
+
 ## Inspect A Capture
 
 ```bash
@@ -308,4 +327,5 @@ python scripts/offline_checks.py
 - `kalshi_capture/storage.py`: CSV writers
 - `scripts/inspect_capture.py`: local output inspection
 - `scripts/derive_bid_ask.py`: raw-to-derived bid/ask conversion
+- `scripts/spread_depth_report.py`: derived bid/ask spread and depth reporting
 - `AGENTS.md`: implementation context for coding agents

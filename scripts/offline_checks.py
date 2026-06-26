@@ -17,6 +17,7 @@ from kalshi_capture.selector import market_passes_filters, score_orderbook_paylo
 from kalshi_capture.storage import write_metadata, write_orderbook_rows
 from scripts.derive_bid_ask import derive_capture, derive_rows
 from scripts.inspect_capture import inspect_capture
+from scripts.spread_depth_report import build_report, write_report
 
 
 def main() -> None:
@@ -28,6 +29,7 @@ def main() -> None:
     check_derived_bid_ask()
     check_liquid_selector_scoring()
     check_liquid_selector_filters()
+    check_spread_depth_report()
     print("offline checks passed")
 
 
@@ -284,6 +286,43 @@ def check_liquid_selector_filters() -> None:
     assert not market_passes_filters(FakeClient(), {**market, "close_time": "2000-01-01T00:00:00Z"}, cache, min_close_hours=1)
     assert not market_passes_filters(FakeClient(), market, cache, min_volume=500)
     assert not market_passes_filters(FakeClient(), market, cache, min_open_interest=500)
+
+
+def check_spread_depth_report() -> None:
+    derived_dir = Path(tempfile.mkdtemp())
+    output_path = derived_dir / "orderbooks" / "category=Sports" / "date=2026-06-26" / "orderbook.csv"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        "capture_ts_ms,snapshot_id,ticker,outcome,book_side,level,price,size\n"
+        "1782432000000,1782432000000:T1,T1,yes,bid,0,4000,100\n"
+        "1782432000000,1782432000000:T1,T1,yes,bid,1,3900,50\n"
+        "1782432000000,1782432000000:T1,T1,yes,ask,0,4500,25\n"
+        "1782432000000,1782432000000:T1,T1,yes,ask,1,4600,75\n"
+        "1782432000000,1782432000000:T1,T1,no,bid,0,5500,25\n"
+        "1782432000000,1782432000000:T1,T1,no,ask,0,6000,100\n"
+    )
+
+    rows = build_report(derived_dir, outcomes=("yes",))
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.category == "Sports"
+    assert row.ticker == "T1"
+    assert row.outcome == "yes"
+    assert row.snapshots == 1
+    assert row.spread_snapshots == 1
+    assert row.min_spread == 500
+    assert row.avg_spread == "500.00"
+    assert row.max_spread == 500
+    assert row.avg_best_bid == "4000.00"
+    assert row.avg_best_ask == "4500.00"
+    assert row.avg_top_bid_size == "100.00"
+    assert row.avg_top_ask_size == "25.00"
+    assert row.avg_total_bid_size == "150.00"
+    assert row.avg_total_ask_size == "100.00"
+
+    report_path = derived_dir / "spread_depth.csv"
+    write_report(rows, report_path)
+    assert "avg_spread" in report_path.read_text()
 
 
 if __name__ == "__main__":
