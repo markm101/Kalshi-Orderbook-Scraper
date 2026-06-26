@@ -71,6 +71,14 @@ Columns:
 
 Kalshi REST order books return YES bids and NO bids only. Explicit asks are not returned because binary market asks can be derived from the opposite side's bids.
 
+Price examples:
+
+```text
+1500 = $0.1500
+9030 = $0.9030
+10000 = $1.0000
+```
+
 ## Metadata
 
 Market metadata will be stored separately:
@@ -182,6 +190,22 @@ Run offline checks without calling Kalshi:
 
 ```bash
 python scripts/offline_checks.py
+```
+
+Inspect a capture output directory:
+
+```bash
+python scripts/inspect_capture.py data
+```
+
+Run one read-only production order book capture cycle:
+
+```bash
+python -m kalshi_capture.main \
+  --env prod \
+  --tickers MARKET-TICKER \
+  --output-dir data_smoke \
+  --once
 ```
 
 ```bash

@@ -13,6 +13,7 @@ from kalshi_capture.discovery import DiscoveryResult, MarketMetadata, SeriesMeta
 from kalshi_capture.gaps import GapLogger
 from kalshi_capture.orderbook import extract_orderbook_tickers, flatten_orderbook_payload
 from kalshi_capture.storage import write_metadata, write_orderbook_rows
+from scripts.inspect_capture import inspect_capture
 
 
 def main() -> None:
@@ -20,6 +21,7 @@ def main() -> None:
     check_storage_writes()
     check_gap_logger()
     check_env_file_parser()
+    check_capture_inspector()
     print("offline checks passed")
 
 
@@ -109,6 +111,53 @@ def check_env_file_parser() -> None:
     values = read_env_file(env_path)
     assert values["KALSHI_KEY_ID"] == "example-key-id"
     assert values["KALSHI_PRIVATE_KEY_PATH"] == "/tmp/key.txt"
+
+
+def check_capture_inspector() -> None:
+    output_dir = Path(tempfile.mkdtemp())
+    market = MarketMetadata(
+        ticker="T1",
+        event_ticker="SERIES-TEST",
+        series_ticker="SERIES",
+        market_type="binary",
+        status="active",
+        title="",
+        yes_sub_title="Yes",
+        no_sub_title="No",
+        open_time="",
+        close_time="",
+        updated_time="",
+    )
+    series = SeriesMetadata(
+        series_ticker="SERIES",
+        category="Sports",
+        sanitized_category="Sports",
+        tags="",
+        title="Series",
+        frequency="daily",
+        updated_at="",
+    )
+    discovery = DiscoveryResult(markets=(market,), series=(series,))
+    payload = {
+        "orderbooks": [
+            {
+                "ticker": "T1",
+                "orderbook_fp": {"yes_dollars": [["0.1500", "100.00"]], "no_dollars": []},
+            }
+        ]
+    }
+    rows = flatten_orderbook_payload(payload, 1782432000000)
+    write_orderbook_rows(output_dir, rows, discovery.ticker_categories)
+    gap_logger = GapLogger(output_dir)
+    gap_logger.log("startup", "test")
+
+    summary = inspect_capture(output_dir)
+    assert summary.orderbook_files == 1
+    assert summary.orderbook_rows == 1
+    assert summary.tickers == {"T1"}
+    assert summary.categories == {"Sports"}
+    assert summary.dates == {"2026-06-26"}
+    assert summary.gap_events["startup"] == 1
 
 
 if __name__ == "__main__":
