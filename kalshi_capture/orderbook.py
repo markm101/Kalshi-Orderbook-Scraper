@@ -15,6 +15,7 @@ class OrderBookRow:
     level: int
     price: int
     size: int
+    snapshot_id: str
 
 
 @dataclass(frozen=True)
@@ -67,9 +68,14 @@ def flatten_orderbook_payload(
         book = item.get("orderbook_fp")
         if not isinstance(book, dict):
             continue
-        rows.extend(_flatten_side(capture_ts_ms, ticker, "yes", book.get("yes_dollars"), max_levels))
-        rows.extend(_flatten_side(capture_ts_ms, ticker, "no", book.get("no_dollars"), max_levels))
+        snapshot_id = make_snapshot_id(capture_ts_ms, ticker)
+        rows.extend(_flatten_side(capture_ts_ms, ticker, snapshot_id, "yes", book.get("yes_dollars"), max_levels))
+        rows.extend(_flatten_side(capture_ts_ms, ticker, snapshot_id, "no", book.get("no_dollars"), max_levels))
     return tuple(rows)
+
+
+def make_snapshot_id(capture_ts_ms: int, ticker: str) -> str:
+    return f"{capture_ts_ms}:{ticker}"
 
 
 def extract_orderbook_tickers(payload: dict[str, Any]) -> tuple[str, ...]:
@@ -90,6 +96,7 @@ def extract_orderbook_tickers(payload: dict[str, Any]) -> tuple[str, ...]:
 def _flatten_side(
     capture_ts_ms: int,
     ticker: str,
+    snapshot_id: str,
     side: str,
     levels: Any,
     max_levels: int,
@@ -110,6 +117,7 @@ def _flatten_side(
                 level=level,
                 price=_dollars_to_fixed_units(str(price_size[0])),
                 size=_fixed_count_to_int(str(price_size[1])),
+                snapshot_id=snapshot_id,
             )
         )
     return tuple(rows)

@@ -57,7 +57,7 @@ Category is stored in the directory path, not in each order book row.
 Each order book CSV contains:
 
 ```text
-capture_ts_ms,ticker,side,level,price,size
+capture_ts_ms,ticker,side,level,price,size,snapshot_id
 ```
 
 Columns:
@@ -68,6 +68,7 @@ Columns:
 - `level`: 0 is the best bid for that side
 - `price`: price in fixed units where `10000` equals `$1.0000`
 - `size`: resting contracts at that level
+- `snapshot_id`: stable grouping key for one ticker's captured book at one timestamp
 
 Kalshi REST order books return YES bids and NO bids only. Explicit asks are not returned because binary market asks can be derived from the opposite side's bids.
 
@@ -77,6 +78,27 @@ Price examples:
 1500 = $0.1500
 9030 = $0.9030
 10000 = $1.0000
+```
+
+## Derived Bid/Ask View
+
+Raw capture stores the bid books Kalshi returns. For backtesting, create a derived bid/ask view:
+
+```bash
+python scripts/derive_bid_ask.py exports/short_capture_active exports/short_capture_active_derived
+```
+
+Derived CSV rows contain:
+
+```text
+capture_ts_ms,snapshot_id,ticker,outcome,book_side,level,price,size
+```
+
+Derivation rules:
+
+```text
+YES bid -> YES bid and NO ask at 10000 - price
+NO bid  -> NO bid and YES ask at 10000 - price
 ```
 
 ## Metadata
