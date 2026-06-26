@@ -47,8 +47,8 @@ def check_orderbook_flattening() -> None:
     }
     rows = flatten_orderbook_payload(payload, 1782432000000, max_levels=1)
     assert [(row.side, row.level, row.price, row.size) for row in rows] == [
-        ("yes", 0, 1500, 100),
-        ("no", 0, 8500, 50),
+        ("yes", 0, 1500, 10000),
+        ("no", 0, 8500, 5000),
     ]
     assert rows[0].snapshot_id == "1782432000000:T1"
     assert extract_orderbook_tickers(payload) == ("T1",)
@@ -96,7 +96,7 @@ def check_storage_writes() -> None:
     assert (output_dir / "metadata" / "series.csv").exists()
     orderbook_path = output_dir / "orderbooks" / "category=Sports" / "date=2026-06-26" / "orderbook.csv"
     assert orderbook_path.exists()
-    assert "T1,yes,0,1500,100,1782432000000:T1" in orderbook_path.read_text()
+    assert "T1,yes,0,1500,10000,1782432000000:T1" in orderbook_path.read_text()
 
 
 def check_gap_logger() -> None:
@@ -168,8 +168,8 @@ def check_capture_inspector() -> None:
     assert summary.categories == {"Sports"}
     assert summary.dates == {"2026-06-26"}
     assert len(summary.snapshots) == 1
-    assert summary.total_size == 100
-    assert summary.total_top_level_size == 100
+    assert summary.total_size == 10000
+    assert summary.total_top_level_size == 10000
     assert summary.run_summary["rows"] == 1
     assert summary.run_summary["zero_row_batches"] == 0
     assert summary.gap_events["startup"] == 1
@@ -228,7 +228,7 @@ def check_derived_bid_ask() -> None:
     assert derive_capture(output_dir, derived_dir) == 2
     derived_path = derived_dir / "orderbooks" / "category=Sports" / "date=2026-06-26" / "orderbook.csv"
     text = derived_path.read_text()
-    assert "yes,ask,0,1500,50" in text
+    assert "yes,ask,0,1500,5000" in text
 
 
 def check_liquid_selector_scoring() -> None:
@@ -252,9 +252,9 @@ def check_liquid_selector_scoring() -> None:
     }
     scores = {candidate.ticker: candidate for candidate in score_orderbook_payload(payload)}
     assert scores["T1"].rows == 3
-    assert scores["T1"].top_level_size == 150
+    assert scores["T1"].top_level_size == 15000
     assert scores["T2"].rows == 1
-    assert scores["T2"].top_level_size == 10
+    assert scores["T2"].top_level_size == 1000
 
 
 def check_liquid_selector_filters() -> None:

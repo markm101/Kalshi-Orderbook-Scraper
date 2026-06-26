@@ -168,7 +168,7 @@ Rules:
 - `side` is `yes` or `no`, meaning Kalshi bid side.
 - `level=0` is best bid for that side.
 - `price` is fixed units where `10000 = $1.0000`.
-- `size` is integer contracts from fixed-point count strings.
+- `size` is fixed count units where `100 = 1 contract`.
 - `snapshot_id = capture_ts_ms:ticker`.
 - Category is not stored in raw rows. It is encoded in the directory path and stored in `metadata/series.csv`.
 
@@ -181,7 +181,7 @@ Flattening example:
 becomes:
 
 ```text
-price=1500,size=100
+price=1500,size=10000
 ```
 
 Use `Decimal`, never binary float arithmetic.

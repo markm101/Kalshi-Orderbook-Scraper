@@ -262,7 +262,7 @@ Columns:
 - `side`: `yes` or `no` bid side
 - `level`: depth level, where `0` is best bid for that side
 - `price`: fixed units where `10000` equals `$1.0000`
-- `size`: resting contracts at that price level
+- `size`: fixed count units where `100` equals `1` contract
 - `snapshot_id`: grouping key for one ticker's captured book at one timestamp
 
 Price examples:
@@ -271,6 +271,14 @@ Price examples:
 1500 = $0.1500
 9030 = $0.9030
 10000 = $1.0000
+```
+
+Size examples:
+
+```text
+100 = 1 contract
+10000 = 100 contracts
+18914 = 189.14 contracts
 ```
 
 Kalshi REST order books return YES bids and NO bids only. They do not return explicit asks. In binary markets, the opposite side implies asks.

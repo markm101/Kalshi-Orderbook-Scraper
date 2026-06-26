@@ -116,7 +116,7 @@ def _flatten_side(
                 side=side,
                 level=level,
                 price=_dollars_to_fixed_units(str(price_size[0])),
-                size=_fixed_count_to_int(str(price_size[1])),
+                size=_count_to_fixed_units(str(price_size[1])),
                 snapshot_id=snapshot_id,
             )
         )
@@ -131,9 +131,9 @@ def _dollars_to_fixed_units(value: str) -> int:
     return _decimal_to_integral_int(fixed_units, f"price {value!r}")
 
 
-def _fixed_count_to_int(value: str) -> int:
+def _count_to_fixed_units(value: str) -> int:
     try:
-        count = Decimal(value)
+        count = Decimal(value) * Decimal("100")
     except InvalidOperation as exc:
         raise ValueError(f"Invalid fixed count: {value!r}") from exc
     return _decimal_to_integral_int(count, f"size {value!r}")

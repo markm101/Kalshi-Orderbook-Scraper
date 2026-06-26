@@ -315,6 +315,10 @@ Use `--selector-categories` for selector filtering. Use `--categories` only when
 
 Spread metrics require both bid and ask for the same outcome in the same snapshot. One-sided books still produce useful depth metrics.
 
+### Size Units
+
+Raw and derived `size` values are fixed count units where `100 = 1 contract`. This preserves fractional API sizes such as `189.14` contracts as `18914`.
+
 ## V1 Done Criteria
 
 V1 is ready when these pass:
