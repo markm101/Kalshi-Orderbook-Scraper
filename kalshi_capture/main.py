@@ -6,6 +6,8 @@ from typing import Any
 from kalshi_capture.auth import load_private_key
 from kalshi_capture.client import KalshiClient
 from kalshi_capture.config import Config, load_config
+from kalshi_capture.discovery import discover_markets
+from kalshi_capture.storage import write_metadata
 
 
 def configure_logging(level: str) -> None:
@@ -26,6 +28,26 @@ def dry_run(config: Config) -> None:
         logging.info("sample_open_markets=%s", [market.get("ticker") for market in market_items])
 
 
+def discover_only(config: Config) -> None:
+    private_key = load_private_key(config.private_key_path)
+    with KalshiClient(config.base_url, config.key_id, private_key) as client:
+        discovery = discover_markets(
+            client,
+            tickers=config.tickers,
+            series=config.series,
+            categories=config.categories,
+            exclude_categories=config.exclude_categories,
+        )
+
+    write_metadata(config.output_dir, discovery)
+    logging.info(
+        "wrote metadata markets=%s series=%s output_dir=%s",
+        len(discovery.markets),
+        len(discovery.series),
+        config.output_dir,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     config = load_config(argv)
     configure_logging(config.log_level)
@@ -34,7 +56,11 @@ def main(argv: list[str] | None = None) -> int:
         dry_run(config)
         return 0
 
-    raise SystemExit("Only --dry-run is implemented in this first slice")
+    if config.discover_only:
+        discover_only(config)
+        return 0
+
+    raise SystemExit("Only --dry-run and --discover-only are implemented so far")
 
 
 if __name__ == "__main__":

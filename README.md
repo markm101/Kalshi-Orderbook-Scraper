@@ -143,6 +143,16 @@ export KALSHI_PRIVATE_KEY_PATH="/path/to/kalshi-private-key.key"
 python -m kalshi_capture.main --env demo --dry-run
 ```
 
+Discover open markets for a series and write metadata CSVs:
+
+```bash
+python -m kalshi_capture.main \
+  --env demo \
+  --series KXHIGHNY \
+  --output-dir data \
+  --discover-only
+```
+
 ```bash
 python -m kalshi_capture.main \
   --env demo \
