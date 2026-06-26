@@ -66,7 +66,7 @@ Columns:
 - `ticker`: Kalshi market ticker
 - `side`: `yes` or `no` bid side
 - `level`: 0 is the best bid for that side
-- `price`: price in cents
+- `price`: price in fixed units where `10000` equals `$1.0000`
 - `size`: resting contracts at that level
 
 Kalshi REST order books return YES bids and NO bids only. Explicit asks are not returned because binary market asks can be derived from the opposite side's bids.

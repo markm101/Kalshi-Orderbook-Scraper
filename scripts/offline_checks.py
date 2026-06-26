@@ -37,8 +37,8 @@ def check_orderbook_flattening() -> None:
     }
     rows = flatten_orderbook_payload(payload, 1782432000000, max_levels=1)
     assert [(row.side, row.level, row.price, row.size) for row in rows] == [
-        ("yes", 0, 15, 100),
-        ("no", 0, 85, 50),
+        ("yes", 0, 1500, 100),
+        ("no", 0, 8500, 50),
     ]
     assert extract_orderbook_tickers(payload) == ("T1",)
 
@@ -85,7 +85,7 @@ def check_storage_writes() -> None:
     assert (output_dir / "metadata" / "series.csv").exists()
     orderbook_path = output_dir / "orderbooks" / "category=Sports" / "date=2026-06-26" / "orderbook.csv"
     assert orderbook_path.exists()
-    assert "T1,yes,0,15,100" in orderbook_path.read_text()
+    assert "T1,yes,0,1500,100" in orderbook_path.read_text()
 
 
 def check_gap_logger() -> None:

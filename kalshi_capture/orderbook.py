@@ -108,19 +108,19 @@ def _flatten_side(
                 ticker=ticker,
                 side=side,
                 level=level,
-                price=_dollars_to_cents(str(price_size[0])),
+                price=_dollars_to_fixed_units(str(price_size[0])),
                 size=_fixed_count_to_int(str(price_size[1])),
             )
         )
     return tuple(rows)
 
 
-def _dollars_to_cents(value: str) -> int:
+def _dollars_to_fixed_units(value: str) -> int:
     try:
-        cents = Decimal(value) * Decimal("100")
+        fixed_units = Decimal(value) * Decimal("10000")
     except InvalidOperation as exc:
         raise ValueError(f"Invalid dollar price: {value!r}") from exc
-    return _decimal_to_integral_int(cents, f"price {value!r}")
+    return _decimal_to_integral_int(fixed_units, f"price {value!r}")
 
 
 def _fixed_count_to_int(value: str) -> int:
