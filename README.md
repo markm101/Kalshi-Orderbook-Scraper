@@ -153,6 +153,16 @@ python -m kalshi_capture.main \
   --discover-only
 ```
 
+Run one read-only order book capture cycle:
+
+```bash
+python -m kalshi_capture.main \
+  --env demo \
+  --series KXHIGHNY \
+  --output-dir data \
+  --once
+```
+
 ```bash
 python -m kalshi_capture.main \
   --env demo \

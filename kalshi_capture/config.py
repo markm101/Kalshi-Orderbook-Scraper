@@ -27,6 +27,7 @@ class Config:
     max_levels: int
     dry_run: bool
     discover_only: bool
+    once: bool
     heartbeat_seconds: int
     discovery_refresh_seconds: int
     log_level: str
@@ -50,6 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-levels", type=int, default=0, help="0 means all levels")
     parser.add_argument("--dry-run", action="store_true", help="Fetch and log without writing data")
     parser.add_argument("--discover-only", action="store_true", help="Write metadata and exit")
+    parser.add_argument("--once", action="store_true", help="Run one capture cycle and exit")
     parser.add_argument("--heartbeat-seconds", type=int, default=300)
     parser.add_argument("--discovery-refresh-seconds", type=int, default=900)
     parser.add_argument("--log-level", default="INFO")
@@ -84,6 +86,7 @@ def load_config(argv: list[str] | None = None) -> Config:
         max_levels=args.max_levels,
         dry_run=args.dry_run,
         discover_only=args.discover_only,
+        once=args.once,
         heartbeat_seconds=args.heartbeat_seconds,
         discovery_refresh_seconds=args.discovery_refresh_seconds,
         log_level=args.log_level.upper(),

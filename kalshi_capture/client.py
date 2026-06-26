@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 from urllib.parse import urlparse
 
@@ -36,14 +36,18 @@ class KalshiClient:
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
         self.close()
 
-    def get(self, path: str, params: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    def get(
+        self,
+        path: str,
+        params: Mapping[str, Any] | Sequence[tuple[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         return self.request("GET", path, params=params)
 
     def request(
         self,
         method: str,
         path: str,
-        params: Mapping[str, Any] | None = None,
+        params: Mapping[str, Any] | Sequence[tuple[str, Any]] | None = None,
     ) -> dict[str, Any]:
         if not path.startswith("/"):
             path = f"/{path}"

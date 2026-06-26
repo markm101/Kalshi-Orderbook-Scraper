@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from kalshi_capture.auth import load_private_key
+from kalshi_capture.capture import run_capture
 from kalshi_capture.client import KalshiClient
 from kalshi_capture.config import Config, load_config
 from kalshi_capture.discovery import discover_markets
@@ -60,7 +61,10 @@ def main(argv: list[str] | None = None) -> int:
         discover_only(config)
         return 0
 
-    raise SystemExit("Only --dry-run and --discover-only are implemented so far")
+    private_key = load_private_key(config.private_key_path)
+    with KalshiClient(config.base_url, config.key_id, private_key) as client:
+        run_capture(config, client)
+    return 0
 
 
 if __name__ == "__main__":
