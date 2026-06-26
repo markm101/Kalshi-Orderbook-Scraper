@@ -13,6 +13,7 @@ from kalshi_capture.config import Config
 from kalshi_capture.discovery import DiscoveryResult, discover_markets
 from kalshi_capture.gaps import GapLogger
 from kalshi_capture.orderbook import fetch_orderbook_batch
+from kalshi_capture.selector import select_liquid_tickers
 from kalshi_capture.storage import write_metadata, write_orderbook_rows
 
 
@@ -81,9 +82,21 @@ def run_capture(
 
 def _discover(config: Config, client: KalshiClient, gap_logger: GapLogger) -> DiscoveryResult:
     try:
+        tickers = config.tickers
+        if config.select_liquid:
+            selected = select_liquid_tickers(
+                client,
+                limit=config.select_liquid,
+                scan_pages=config.liquid_scan_pages,
+                min_rows=config.min_orderbook_rows,
+                min_top_level_size=config.min_top_level_size,
+            )
+            logging.info("selected liquid tickers=%s", selected)
+            tickers = tuple(dict.fromkeys((*tickers, *selected)))
+
         return discover_markets(
             client,
-            tickers=config.tickers,
+            tickers=tickers,
             series=config.series,
             categories=config.categories,
             exclude_categories=config.exclude_categories,

@@ -13,6 +13,7 @@ from kalshi_capture.config import read_env_file
 from kalshi_capture.discovery import DiscoveryResult, MarketMetadata, SeriesMetadata
 from kalshi_capture.gaps import GapLogger
 from kalshi_capture.orderbook import extract_orderbook_tickers, flatten_orderbook_payload
+from kalshi_capture.selector import score_orderbook_payload
 from kalshi_capture.storage import write_metadata, write_orderbook_rows
 from scripts.derive_bid_ask import derive_capture, derive_rows
 from scripts.inspect_capture import inspect_capture
@@ -25,6 +26,7 @@ def main() -> None:
     check_env_file_parser()
     check_capture_inspector()
     check_derived_bid_ask()
+    check_liquid_selector_scoring()
     print("offline checks passed")
 
 
@@ -224,6 +226,32 @@ def check_derived_bid_ask() -> None:
     derived_path = derived_dir / "orderbooks" / "category=Sports" / "date=2026-06-26" / "orderbook.csv"
     text = derived_path.read_text()
     assert "yes,ask,0,1500,50" in text
+
+
+def check_liquid_selector_scoring() -> None:
+    payload = {
+        "orderbooks": [
+            {
+                "ticker": "T1",
+                "orderbook_fp": {
+                    "yes_dollars": [["0.1500", "100.00"], ["0.1400", "25.00"]],
+                    "no_dollars": [["0.8500", "50.00"]],
+                },
+            },
+            {
+                "ticker": "T2",
+                "orderbook_fp": {
+                    "yes_dollars": [["0.4500", "10.00"]],
+                    "no_dollars": [],
+                },
+            },
+        ]
+    }
+    scores = {candidate.ticker: candidate for candidate in score_orderbook_payload(payload)}
+    assert scores["T1"].rows == 3
+    assert scores["T1"].top_level_size == 150
+    assert scores["T2"].rows == 1
+    assert scores["T2"].top_level_size == 10
 
 
 if __name__ == "__main__":

@@ -52,6 +52,7 @@ Implemented:
 - production/demo REST environment support
 - local `.env` loading
 - market discovery by ticker, series, or category
+- automatic selection of open markets currently returning order book rows
 - series/category metadata export
 - batch order book polling with up to 100 tickers per request
 - CSV output partitioned by category and UTC date
@@ -115,6 +116,47 @@ Inspect the result:
 ```bash
 python scripts/inspect_capture.py exports/smoke_one_ticker
 ```
+
+## Choosing Tickers
+
+For targeted tests, copy the market ticker from Kalshi and pass it with `--tickers`.
+
+Use a comma-separated list for multiple markets:
+
+```bash
+python -m kalshi_capture.main \
+  --env prod \
+  --tickers TICKER1,TICKER2,TICKER3 \
+  --output-dir exports/my_test \
+  --once
+```
+
+Good test tickers usually have visible bid/ask activity on the Kalshi market page. Markets with no resting book depth are still valid, but they will produce metadata, gap logs, and run summaries without order book rows.
+
+Recommended workflow:
+
+1. Start with one ticker and `--once`.
+2. Inspect the output with `scripts/inspect_capture.py`.
+3. If rows are zero, choose a more active market or add several tickers.
+4. Move to `--duration-seconds` only after a one-shot capture writes rows.
+
+For broader collection, use `--series` or `--categories`, but explicit `--tickers` is the easiest and safest way to test a market you personally care about.
+
+You can also let the tool pick currently active markets by scanning open markets and choosing tickers whose order books return rows:
+
+```bash
+python -m kalshi_capture.main \
+  --env prod \
+  --select-liquid 5 \
+  --output-dir exports/liquid_smoke \
+  --once
+```
+
+Optional selector filters:
+
+- `--liquid-scan-pages 5`: number of open-market pages to scan
+- `--min-orderbook-rows 1`: minimum returned book rows per selected ticker
+- `--min-top-level-size 0`: minimum combined best-level size across YES and NO bids
 
 ## Short Timed Capture
 

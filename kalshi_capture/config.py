@@ -19,6 +19,10 @@ class Config:
     key_id: str
     private_key_path: Path
     tickers: tuple[str, ...]
+    select_liquid: int
+    liquid_scan_pages: int
+    min_orderbook_rows: int
+    min_top_level_size: int
     series: tuple[str, ...]
     categories: tuple[str, ...]
     exclude_categories: tuple[str, ...]
@@ -61,6 +65,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Capture Kalshi order book snapshots.")
     parser.add_argument("--env", choices=("demo", "prod"), default="demo")
     parser.add_argument("--tickers", default="", help="Comma-separated market tickers")
+    parser.add_argument("--select-liquid", type=int, default=0, help="Auto-select this many open markets currently returning orderbook rows")
+    parser.add_argument("--liquid-scan-pages", type=int, default=5, help="Open-market pages to scan for liquid selection")
+    parser.add_argument("--min-orderbook-rows", type=int, default=1, help="Minimum orderbook rows required for liquid selection")
+    parser.add_argument("--min-top-level-size", type=int, default=0, help="Minimum combined level-0 size required for liquid selection")
     parser.add_argument("--series", default="", help="Comma-separated series tickers")
     parser.add_argument("--categories", default="", help="Comma-separated series categories")
     parser.add_argument("--exclude-categories", default="", help="Comma-separated categories to skip")
@@ -94,6 +102,14 @@ def load_config(argv: list[str] | None = None) -> Config:
         raise SystemExit("--interval must be greater than 0")
     if args.max_levels < 0:
         raise SystemExit("--max-levels must be 0 or greater")
+    if args.select_liquid < 0:
+        raise SystemExit("--select-liquid must be 0 or greater")
+    if args.liquid_scan_pages <= 0:
+        raise SystemExit("--liquid-scan-pages must be greater than 0")
+    if args.min_orderbook_rows < 0:
+        raise SystemExit("--min-orderbook-rows must be 0 or greater")
+    if args.min_top_level_size < 0:
+        raise SystemExit("--min-top-level-size must be 0 or greater")
     if args.duration_seconds < 0:
         raise SystemExit("--duration-seconds must be 0 or greater")
     if args.heartbeat_seconds <= 0:
@@ -107,6 +123,10 @@ def load_config(argv: list[str] | None = None) -> Config:
         key_id=key_id,
         private_key_path=Path(private_key_path).expanduser(),
         tickers=parse_csv(args.tickers),
+        select_liquid=args.select_liquid,
+        liquid_scan_pages=args.liquid_scan_pages,
+        min_orderbook_rows=args.min_orderbook_rows,
+        min_top_level_size=args.min_top_level_size,
         series=parse_csv(args.series),
         categories=parse_csv(args.categories),
         exclude_categories=parse_csv(args.exclude_categories),

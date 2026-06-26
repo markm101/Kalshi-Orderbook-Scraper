@@ -33,6 +33,7 @@ kalshi_capture/
   gaps.py
   main.py
   orderbook.py
+  selector.py
   storage.py
 ```
 
@@ -51,6 +52,7 @@ Implemented behavior:
 - `.env` loading from project root
 - read-only dry-run mode
 - market discovery by tickers, series, categories
+- automatic liquid-market selection with `--select-liquid`
 - series/category metadata enrichment
 - batch orderbook polling through `/markets/orderbooks`
 - CSV storage by `category=<Category>/date=<YYYY-MM-DD>/orderbook.csv`
@@ -244,6 +246,12 @@ One capture cycle:
 python -m kalshi_capture.main --env prod --tickers MARKET-TICKER --output-dir exports/smoke --once
 ```
 
+Auto-select currently active/liquid markets:
+
+```bash
+python -m kalshi_capture.main --env prod --select-liquid 5 --output-dir exports/liquid_smoke --once
+```
+
 Timed capture:
 
 ```bash
@@ -290,8 +298,7 @@ Do not commit secrets or generated capture exports.
 
 High-value next tasks:
 
-1. Add an automatic liquid-market selector that finds markets currently returning orderbook rows.
-2. Add filters for minimum top-level size, minimum rows returned, category, volume, and close time.
-3. Add spread/depth report scripts for derived bid/ask output.
-4. Add long-run deployment notes for `launchd`, `systemd`, or Docker.
-5. Consider WebSocket capture only if REST polling resolution is insufficient.
+1. Add category-aware liquid selection and close-time/volume filters.
+2. Add spread/depth report scripts for derived bid/ask output.
+3. Add long-run deployment notes for `launchd`, `systemd`, or Docker.
+4. Consider WebSocket capture only if REST polling resolution is insufficient.
