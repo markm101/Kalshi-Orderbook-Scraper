@@ -62,7 +62,7 @@ Implemented behavior:
 - automatic liquid-market selection with `--select-liquid`, category filters, close-time filters, and volume/open-interest filters
 - series/category metadata enrichment
 - batch orderbook polling through `/markets/orderbooks`
-- CSV storage by `category=<Category>/date=<YYYY-MM-DD>/orderbook.csv`
+- CSV storage by `orderbooks/<ticker>.csv`
 - metadata CSVs
 - gap logging
 - run summary JSON
@@ -210,9 +210,7 @@ Capture output:
 ```text
 <output-dir>/
   orderbooks/
-    category=<Category>/
-      date=<YYYY-MM-DD>/
-        orderbook.csv
+    <ticker>.csv
   metadata/
     markets.csv
     series.csv
@@ -220,7 +218,7 @@ Capture output:
   run_summary.json
 ```
 
-Use UTC dates.
+Use `capture_ts_ms` for UTC dates in analysis scripts. Category is stored in metadata, not in the orderbook file path.
 
 Generated data should usually be written under `exports/` during development. `exports/*` is ignored except `exports/README.md`.
 

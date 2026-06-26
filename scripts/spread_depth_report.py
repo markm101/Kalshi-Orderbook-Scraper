@@ -67,16 +67,17 @@ def build_report(
     category_filter = set(categories)
     outcome_filter = set(outcomes)
     books: dict[tuple[str, str, str, str], SnapshotBook] = {}
+    ticker_categories = _load_ticker_categories(derived_dir)
 
-    for path in sorted((derived_dir / "orderbooks").glob("category=*/date=*/orderbook.csv")):
-        category = _partition_value(path, "category")
-        if category_filter and category not in category_filter:
-            continue
+    for path in sorted((derived_dir / "orderbooks").glob("*.csv")):
         with path.open(newline="") as csv_file:
             reader = csv.DictReader(csv_file)
             for row in reader:
                 ticker = row.get("ticker", "")
                 outcome = row.get("outcome", "")
+                category = ticker_categories.get(ticker, "Unknown")
+                if category_filter and category not in category_filter:
+                    continue
                 if ticker_filter and ticker not in ticker_filter:
                     continue
                 if outcome_filter and outcome not in outcome_filter:
@@ -194,12 +195,28 @@ def _avg(values: list[int]) -> str:
     return str(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
-def _partition_value(path: Path, name: str) -> str:
-    prefix = f"{name}="
-    for part in path.parts:
-        if part.startswith(prefix):
-            return part.removeprefix(prefix)
-    return "Unknown"
+def _load_ticker_categories(output_dir: Path) -> dict[str, str]:
+    metadata_dir = output_dir / "metadata"
+    category_by_series: dict[str, str] = {}
+    series_path = metadata_dir / "series.csv"
+    if series_path.exists():
+        with series_path.open(newline="") as csv_file:
+            for row in csv.DictReader(csv_file):
+                series_ticker = row.get("series_ticker", "")
+                category = row.get("sanitized_category") or row.get("category") or "Unknown"
+                if series_ticker:
+                    category_by_series[series_ticker] = category
+
+    categories: dict[str, str] = {}
+    markets_path = metadata_dir / "markets.csv"
+    if markets_path.exists():
+        with markets_path.open(newline="") as csv_file:
+            for row in csv.DictReader(csv_file):
+                ticker = row.get("ticker", "")
+                series_ticker = row.get("series_ticker", "")
+                if ticker:
+                    categories[ticker] = category_by_series.get(series_ticker, "Unknown")
+    return categories
 
 
 def _parse_csv(value: str) -> tuple[str, ...]:

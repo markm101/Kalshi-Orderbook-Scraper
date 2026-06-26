@@ -4,6 +4,7 @@ import argparse
 import csv
 from dataclasses import dataclass, asdict
 from pathlib import Path
+import shutil
 
 
 RAW_COLUMNS = ("capture_ts_ms", "ticker", "side", "level", "price", "size", "snapshot_id")
@@ -47,7 +48,8 @@ def derive_rows(raw_row: dict[str, str]) -> tuple[DerivedRow, ...]:
 
 def derive_capture(input_dir: Path, output_dir: Path) -> int:
     rows_written = 0
-    for input_path in sorted((input_dir / "orderbooks").glob("category=*/date=*/orderbook.csv")):
+    _copy_metadata(input_dir, output_dir)
+    for input_path in sorted((input_dir / "orderbooks").glob("*.csv")):
         output_path = output_dir / input_path.relative_to(input_dir)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with input_path.open(newline="") as input_file, output_path.open("w", newline="") as output_file:
@@ -59,6 +61,12 @@ def derive_capture(input_dir: Path, output_dir: Path) -> int:
                     writer.writerow(asdict(derived_row))
                     rows_written += 1
     return rows_written
+
+
+def _copy_metadata(input_dir: Path, output_dir: Path) -> None:
+    input_metadata = input_dir / "metadata"
+    if input_metadata.exists():
+        shutil.copytree(input_metadata, output_dir / "metadata", dirs_exist_ok=True)
 
 
 def build_parser() -> argparse.ArgumentParser:

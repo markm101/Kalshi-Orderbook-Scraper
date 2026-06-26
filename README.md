@@ -235,9 +235,8 @@ Use a unique output directory per run, such as `exports/captures/<UTC_RUN_ID>_<d
 ```text
 exports/short_capture/
   orderbooks/
-    category=Exotics/
-      date=2026-06-26/
-        orderbook.csv
+    MARKET-TICKER-1.csv
+    MARKET-TICKER-2.csv
   metadata/
     markets.csv
     series.csv
@@ -245,7 +244,7 @@ exports/short_capture/
   run_summary.json
 ```
 
-Category is stored in the directory path, not in every order book row.
+Each ticker gets its own CSV under `orderbooks/`. Category is stored in `metadata/series.csv`, not in every order book row.
 
 ## Raw Order Book CSV
 

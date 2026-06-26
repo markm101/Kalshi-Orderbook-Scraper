@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from datetime import UTC, datetime
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
@@ -29,9 +30,9 @@ class CaptureSummary:
 
 def inspect_capture(output_dir: Path) -> CaptureSummary:
     summary = CaptureSummary()
-    for path in sorted((output_dir / "orderbooks").glob("category=*/date=*/orderbook.csv")):
+    categories = _load_ticker_categories(output_dir)
+    for path in _orderbook_paths(output_dir):
         summary.orderbook_files += 1
-        _add_partition_values(path, summary)
         with path.open(newline="") as csv_file:
             reader = csv.DictReader(csv_file)
             for row in reader:
@@ -39,7 +40,9 @@ def inspect_capture(output_dir: Path) -> CaptureSummary:
                 ticker = row.get("ticker", "")
                 if ticker:
                     summary.tickers.add(ticker)
+                    summary.categories.add(categories.get(ticker, "Unknown"))
                 _add_ts(summary, row.get("capture_ts_ms", ""))
+                _add_date(summary, row.get("capture_ts_ms", ""))
                 _add_orderbook_metrics(summary, row)
 
     gap_path = output_dir / "gaps.csv"
@@ -85,14 +88,6 @@ def print_summary(summary: CaptureSummary) -> None:
         print("gap_events: (none)")
 
 
-def _add_partition_values(path: Path, summary: CaptureSummary) -> None:
-    for part in path.parts:
-        if part.startswith("category="):
-            summary.categories.add(part.removeprefix("category="))
-        elif part.startswith("date="):
-            summary.dates.add(part.removeprefix("date="))
-
-
 def _add_ts(summary: CaptureSummary, value: str) -> None:
     try:
         ts_ms = int(value)
@@ -103,6 +98,14 @@ def _add_ts(summary: CaptureSummary, value: str) -> None:
         summary.min_ts_ms = ts_ms
     if summary.max_ts_ms is None or ts_ms > summary.max_ts_ms:
         summary.max_ts_ms = ts_ms
+
+
+def _add_date(summary: CaptureSummary, value: str) -> None:
+    try:
+        ts_ms = int(value)
+    except ValueError:
+        return
+    summary.dates.add(datetime.fromtimestamp(ts_ms / 1000, tz=UTC).date().isoformat())
 
 
 def _add_orderbook_metrics(summary: CaptureSummary, row: dict[str, str]) -> None:
@@ -124,7 +127,7 @@ def _add_orderbook_metrics(summary: CaptureSummary, row: dict[str, str]) -> None
 
 def _add_spread_metrics(output_dir: Path, summary: CaptureSummary) -> None:
     best_by_snapshot: dict[tuple[str, str], dict[str, int]] = {}
-    for path in sorted((output_dir / "orderbooks").glob("category=*/date=*/orderbook.csv")):
+    for path in _orderbook_paths(output_dir):
         with path.open(newline="") as csv_file:
             reader = csv.DictReader(csv_file)
             for row in reader:
@@ -149,6 +152,34 @@ def _add_spread_metrics(output_dir: Path, summary: CaptureSummary) -> None:
             summary.min_yes_spread = spread
         if summary.max_yes_spread is None or spread > summary.max_yes_spread:
             summary.max_yes_spread = spread
+
+
+def _orderbook_paths(output_dir: Path) -> tuple[Path, ...]:
+    return tuple(sorted((output_dir / "orderbooks").glob("*.csv")))
+
+
+def _load_ticker_categories(output_dir: Path) -> dict[str, str]:
+    metadata_dir = output_dir / "metadata"
+    category_by_series: dict[str, str] = {}
+    series_path = metadata_dir / "series.csv"
+    if series_path.exists():
+        with series_path.open(newline="") as csv_file:
+            for row in csv.DictReader(csv_file):
+                series_ticker = row.get("series_ticker", "")
+                category = row.get("sanitized_category") or row.get("category") or "Unknown"
+                if series_ticker:
+                    category_by_series[series_ticker] = category
+
+    categories: dict[str, str] = {}
+    markets_path = metadata_dir / "markets.csv"
+    if markets_path.exists():
+        with markets_path.open(newline="") as csv_file:
+            for row in csv.DictReader(csv_file):
+                ticker = row.get("ticker", "")
+                series_ticker = row.get("series_ticker", "")
+                if ticker:
+                    categories[ticker] = category_by_series.get(series_ticker, "Unknown")
+    return categories
 
 
 def build_parser() -> argparse.ArgumentParser:

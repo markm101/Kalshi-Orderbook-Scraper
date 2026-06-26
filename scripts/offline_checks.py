@@ -95,7 +95,7 @@ def check_storage_writes() -> None:
 
     assert (output_dir / "metadata" / "markets.csv").exists()
     assert (output_dir / "metadata" / "series.csv").exists()
-    orderbook_path = output_dir / "orderbooks" / "category=Sports" / "date=2026-06-26" / "orderbook.csv"
+    orderbook_path = output_dir / "orderbooks" / "T1.csv"
     assert orderbook_path.exists()
     assert "T1,yes,0,1500,10000,1782432000000:T1" in orderbook_path.read_text()
 
@@ -148,6 +148,7 @@ def check_capture_inspector() -> None:
         updated_at="",
     )
     discovery = DiscoveryResult(markets=(market,), series=(series,))
+    write_metadata(output_dir, discovery)
     payload = {
         "orderbooks": [
             {
@@ -217,6 +218,7 @@ def check_derived_bid_ask() -> None:
         updated_at="",
     )
     discovery = DiscoveryResult(markets=(market,), series=(series,))
+    write_metadata(output_dir, discovery)
     payload = {
         "orderbooks": [
             {
@@ -227,9 +229,10 @@ def check_derived_bid_ask() -> None:
     }
     write_orderbook_rows(output_dir, flatten_orderbook_payload(payload, 1782432000000), discovery.ticker_categories)
     assert derive_capture(output_dir, derived_dir) == 2
-    derived_path = derived_dir / "orderbooks" / "category=Sports" / "date=2026-06-26" / "orderbook.csv"
+    derived_path = derived_dir / "orderbooks" / "T1.csv"
     text = derived_path.read_text()
     assert "yes,ask,0,1500,5000" in text
+    assert (derived_dir / "metadata" / "markets.csv").exists()
 
 
 def check_liquid_selector_scoring() -> None:
@@ -322,7 +325,17 @@ def check_liquid_selector_category_seed() -> None:
 
 def check_spread_depth_report() -> None:
     derived_dir = Path(tempfile.mkdtemp())
-    output_path = derived_dir / "orderbooks" / "category=Sports" / "date=2026-06-26" / "orderbook.csv"
+    metadata_dir = derived_dir / "metadata"
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    (metadata_dir / "markets.csv").write_text(
+        "ticker,event_ticker,series_ticker,market_type,status,title,yes_sub_title,no_sub_title,open_time,close_time,updated_time\n"
+        "T1,SERIES-TEST,SERIES,binary,active,,,,'','',''\n"
+    )
+    (metadata_dir / "series.csv").write_text(
+        "series_ticker,category,sanitized_category,tags,title,frequency,updated_at\n"
+        "SERIES,Sports,Sports,,Series,daily,\n"
+    )
+    output_path = derived_dir / "orderbooks" / "T1.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
         "capture_ts_ms,snapshot_id,ticker,outcome,book_side,level,price,size\n"

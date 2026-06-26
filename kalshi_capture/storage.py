@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import csv
 from dataclasses import asdict, fields
-from datetime import UTC, datetime
 from pathlib import Path
 
-from kalshi_capture.discovery import DiscoveryResult, MarketMetadata, SeriesMetadata, UNKNOWN_CATEGORY
+from kalshi_capture.discovery import DiscoveryResult, MarketMetadata, SeriesMetadata
 from kalshi_capture.orderbook import OrderBookRow
 
 
@@ -23,9 +22,7 @@ def write_orderbook_rows(
 ) -> None:
     rows_by_path: dict[Path, list[OrderBookRow]] = {}
     for row in rows:
-        category = ticker_categories.get(row.ticker, UNKNOWN_CATEGORY)
-        date = datetime.fromtimestamp(row.capture_ts_ms / 1000, tz=UTC).date().isoformat()
-        path = output_dir / "orderbooks" / f"category={category}" / f"date={date}" / "orderbook.csv"
+        path = output_dir / "orderbooks" / f"{row.ticker}.csv"
         rows_by_path.setdefault(path, []).append(row)
 
     for path, path_rows in rows_by_path.items():
