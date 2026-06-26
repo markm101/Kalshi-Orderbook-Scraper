@@ -65,6 +65,8 @@ Implemented:
 - offline validation script
 - capture inspection script
 - derived bid/ask export script
+- spread/depth reporting script
+- v1 runbook for short and long captures
 
 ## Install
 
@@ -190,6 +192,43 @@ python -m kalshi_capture.main \
 ```
 
 Generated files under `exports/` are ignored by Git so you can inspect CSVs locally without committing captured data.
+
+## V1 Workflow
+
+The complete v1 runbook is in `docs/v1_runbook.md`.
+
+Recommended sequence:
+
+1. Run `python scripts/offline_checks.py`.
+2. Run `python -m kalshi_capture.main --env prod --dry-run`.
+3. Run a one-shot selector capture with `--once`.
+4. Inspect it with `scripts/inspect_capture.py`.
+5. Run a short timed capture.
+6. Derive bid/ask rows with `scripts/derive_bid_ask.py`.
+7. Report spread/depth metrics with `scripts/spread_depth_report.py`.
+8. Start longer captures only after the short capture writes usable rows.
+
+Recommended starting defaults:
+
+- `--interval 2.0`
+- `--select-liquid 10` to `20`
+- `--liquid-scan-pages 5`
+- `--min-close-hours 2` for short tests, `6` or more for longer captures
+- `--min-top-level-size 1` for broad capture, higher for stricter liquidity
+- `--max-levels 0` to store all returned levels
+
+Use a unique output directory per run, such as `exports/captures/<UTC_RUN_ID>_<description>/`.
+
+## Troubleshooting
+
+- `KALSHI_KEY_ID is required`: create `.env` or export the environment variable.
+- `KALSHI_PRIVATE_KEY_PATH is required`: set the private key path and keep the key outside this repository.
+- Auth failures: check key ID, private key pairing, `prod` vs `demo`, and machine clock accuracy.
+- Zero rows: selected markets had no visible depth; use `--select-liquid`, broaden filters, or choose more active tickers.
+- Missing tickers: inspect `gaps.csv`, retry with fewer tickers, or use fresher selector results.
+- Rate limits: increase `--interval`, reduce `--select-liquid`, or narrow discovery.
+- Large category crawls: use `--selector-categories` for selection only; use `--categories` only when full category discovery is intended.
+- No spread metrics: both bid and ask must exist for the same outcome and snapshot; one-sided books still produce depth metrics.
 
 ## Output Layout
 
@@ -328,4 +367,5 @@ python scripts/offline_checks.py
 - `scripts/inspect_capture.py`: local output inspection
 - `scripts/derive_bid_ask.py`: raw-to-derived bid/ask conversion
 - `scripts/spread_depth_report.py`: derived bid/ask spread and depth reporting
+- `docs/v1_runbook.md`: recommended v1 workflow, long-run notes, and troubleshooting
 - `AGENTS.md`: implementation context for coding agents

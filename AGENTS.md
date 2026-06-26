@@ -46,6 +46,12 @@ scripts/derive_bid_ask.py
 scripts/spread_depth_report.py
 ```
 
+Docs:
+
+```text
+docs/v1_runbook.md
+```
+
 Implemented behavior:
 
 - RSA-PSS auth signing
@@ -66,6 +72,7 @@ Implemented behavior:
 - `--duration-seconds` timed capture
 - derived bid/ask export
 - spread/depth reporting for derived bid/ask output
+- v1 runbook with recommended workflow, long-run notes, and troubleshooting
 - standard-library inspection and offline checks
 
 ## Kalshi API Facts
@@ -284,6 +291,12 @@ Report spread/depth metrics:
 python scripts/spread_depth_report.py exports/short_capture_derived --output-csv exports/short_capture_spread_depth.csv
 ```
 
+V1 runbook:
+
+```bash
+docs/v1_runbook.md
+```
+
 ## Git Hygiene
 
 Ignored local files/directories include:
@@ -312,5 +325,5 @@ Do not commit secrets or generated capture exports.
 
 High-value next tasks:
 
-1. Add long-run deployment notes for `launchd`, `systemd`, or Docker.
+1. Run a 30- to 120-minute timed capture and review output quality.
 2. Consider WebSocket capture only if REST polling resolution is insufficient.
