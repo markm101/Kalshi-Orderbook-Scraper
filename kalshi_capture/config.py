@@ -28,6 +28,7 @@ class Config:
     dry_run: bool
     discover_only: bool
     once: bool
+    duration_seconds: float
     heartbeat_seconds: int
     discovery_refresh_seconds: int
     log_level: str
@@ -69,6 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true", help="Fetch and log without writing data")
     parser.add_argument("--discover-only", action="store_true", help="Write metadata and exit")
     parser.add_argument("--once", action="store_true", help="Run one capture cycle and exit")
+    parser.add_argument("--duration-seconds", type=float, default=0.0, help="Stop capture after this many seconds")
     parser.add_argument("--heartbeat-seconds", type=int, default=300)
     parser.add_argument("--discovery-refresh-seconds", type=int, default=900)
     parser.add_argument("--log-level", default="INFO")
@@ -92,6 +94,8 @@ def load_config(argv: list[str] | None = None) -> Config:
         raise SystemExit("--interval must be greater than 0")
     if args.max_levels < 0:
         raise SystemExit("--max-levels must be 0 or greater")
+    if args.duration_seconds < 0:
+        raise SystemExit("--duration-seconds must be 0 or greater")
     if args.heartbeat_seconds <= 0:
         raise SystemExit("--heartbeat-seconds must be greater than 0")
     if args.discovery_refresh_seconds <= 0:
@@ -112,6 +116,7 @@ def load_config(argv: list[str] | None = None) -> Config:
         dry_run=args.dry_run,
         discover_only=args.discover_only,
         once=args.once,
+        duration_seconds=args.duration_seconds,
         heartbeat_seconds=args.heartbeat_seconds,
         discovery_refresh_seconds=args.discovery_refresh_seconds,
         log_level=args.log_level.upper(),

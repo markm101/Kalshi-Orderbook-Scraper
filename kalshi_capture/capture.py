@@ -49,7 +49,8 @@ def run_capture(
 
         next_discovery_refresh = time.monotonic() + config.discovery_refresh_seconds
         next_heartbeat = time.monotonic() + config.heartbeat_seconds
-        while not should_stop():
+        stop_at = time.monotonic() + config.duration_seconds if config.duration_seconds > 0 else None
+        while not should_stop() and not _duration_elapsed(stop_at):
             cycle_start = time.monotonic()
             if time.monotonic() >= next_discovery_refresh:
                 discovery = _discover(config, client, gap_logger)
@@ -63,7 +64,7 @@ def run_capture(
                 next_heartbeat = time.monotonic() + config.heartbeat_seconds
 
             elapsed = time.monotonic() - cycle_start
-            _sleep_interruptibly(max(0.0, config.interval - elapsed), should_stop)
+            _sleep_interruptibly(max(0.0, config.interval - elapsed), should_stop, stop_at)
     finally:
         gap_logger.log("shutdown", "capture stopped")
 
@@ -150,9 +151,15 @@ def _log_heartbeat(discovery: DiscoveryResult, stats: CaptureStats) -> None:
     )
 
 
-def _sleep_interruptibly(seconds: float, should_stop: Callable[[], bool]) -> None:
+def _duration_elapsed(stop_at: float | None) -> bool:
+    return stop_at is not None and time.monotonic() >= stop_at
+
+
+def _sleep_interruptibly(seconds: float, should_stop: Callable[[], bool], stop_at: float | None) -> None:
     deadline = time.monotonic() + seconds
-    while not should_stop():
+    if stop_at is not None:
+        deadline = min(deadline, stop_at)
+    while not should_stop() and not _duration_elapsed(stop_at):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return

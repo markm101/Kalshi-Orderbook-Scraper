@@ -210,6 +210,23 @@ python -m kalshi_capture.main \
 
 Generated files under `exports/` are ignored by Git so you can inspect CSVs locally without committing captured data.
 
+Run a short timed production capture:
+
+```bash
+python -m kalshi_capture.main \
+  --env prod \
+  --tickers MARKET-TICKER-1,MARKET-TICKER-2 \
+  --output-dir exports/short_capture \
+  --interval 2.0 \
+  --duration-seconds 120
+```
+
+Then inspect it:
+
+```bash
+python scripts/inspect_capture.py exports/short_capture
+```
+
 ```bash
 python -m kalshi_capture.main \
   --env demo \
