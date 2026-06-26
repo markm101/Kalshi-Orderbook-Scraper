@@ -34,6 +34,26 @@ def select_liquid_tickers(
 
     candidates: dict[str, LiquidMarketCandidate] = {}
     series_categories: dict[str, str] = {}
+    if include_categories:
+        for markets in _category_market_batches(client, include_categories, scan_pages, series_categories):
+            _add_candidates(
+                client,
+                markets,
+                candidates,
+                limit,
+                min_rows=min_rows,
+                min_top_level_size=min_top_level_size,
+                include_categories=include_categories,
+                exclude_categories=exclude_categories,
+                min_close_hours=min_close_hours,
+                min_volume=min_volume,
+                min_open_interest=min_open_interest,
+                series_categories=series_categories,
+            )
+            if len(candidates) >= limit:
+                return _rank_candidates(tuple(candidates.values()), limit)
+        return _rank_candidates(tuple(candidates.values()), limit)
+
     cursor = ""
     for _ in range(scan_pages):
         params: dict[str, Any] = {"status": "open", "limit": 100}
@@ -42,35 +62,100 @@ def select_liquid_tickers(
 
         market_payload = client.get("/markets", params=params)
         markets = tuple(item for item in market_payload.get("markets", []) if isinstance(item, dict))
-        tickers = tuple(
-            str(market.get("ticker"))
-            for market in markets
-            if market_passes_filters(
-                client,
-                market,
-                series_categories,
-                include_categories=include_categories,
-                exclude_categories=exclude_categories,
-                min_close_hours=min_close_hours,
-                min_volume=min_volume,
-                min_open_interest=min_open_interest,
-            )
-            and market.get("ticker")
+        _add_candidates(
+            client,
+            markets,
+            candidates,
+            limit,
+            min_rows=min_rows,
+            min_top_level_size=min_top_level_size,
+            include_categories=include_categories,
+            exclude_categories=exclude_categories,
+            min_close_hours=min_close_hours,
+            min_volume=min_volume,
+            min_open_interest=min_open_interest,
+            series_categories=series_categories,
         )
-        for chunk in _chunks(tickers, 100):
-            orderbook_payload = client.get("/markets/orderbooks", params=[("tickers", ticker) for ticker in chunk])
-            for candidate in score_orderbook_payload(orderbook_payload):
-                if candidate.rows < min_rows or candidate.top_level_size < min_top_level_size:
-                    continue
-                candidates[candidate.ticker] = candidate
-                if len(candidates) >= limit:
-                    return _rank_candidates(tuple(candidates.values()), limit)
+        if len(candidates) >= limit:
+            return _rank_candidates(tuple(candidates.values()), limit)
 
         cursor = str(market_payload.get("cursor") or "")
         if not cursor:
             break
 
     return _rank_candidates(tuple(candidates.values()), limit)
+
+
+def _add_candidates(
+    client: KalshiClient,
+    markets: tuple[dict[str, Any], ...],
+    candidates: dict[str, LiquidMarketCandidate],
+    limit: int,
+    min_rows: int,
+    min_top_level_size: int,
+    include_categories: tuple[str, ...],
+    exclude_categories: tuple[str, ...],
+    min_close_hours: float,
+    min_volume: int,
+    min_open_interest: int,
+    series_categories: dict[str, str],
+) -> None:
+    tickers = tuple(
+        str(market.get("ticker"))
+        for market in markets
+        if market_passes_filters(
+            client,
+            market,
+            series_categories,
+            include_categories=include_categories,
+            exclude_categories=exclude_categories,
+            min_close_hours=min_close_hours,
+            min_volume=min_volume,
+            min_open_interest=min_open_interest,
+        )
+        and market.get("ticker")
+    )
+    for chunk in _chunks(tickers, 100):
+        orderbook_payload = client.get("/markets/orderbooks", params=[("tickers", ticker) for ticker in chunk])
+        for candidate in score_orderbook_payload(orderbook_payload):
+            if candidate.rows < min_rows or candidate.top_level_size < min_top_level_size:
+                continue
+            candidates[candidate.ticker] = candidate
+            if len(candidates) >= limit:
+                return
+
+
+def _category_market_batches(
+    client: KalshiClient,
+    categories: tuple[str, ...],
+    scan_pages: int,
+    series_categories: dict[str, str],
+) -> tuple[tuple[dict[str, Any], ...], ...]:
+    batches: list[tuple[dict[str, Any], ...]] = []
+    pages_seen = 0
+    for category in categories:
+        series_payload = client.get("/series", params={"category": category, "include_product_metadata": "true"})
+        series_tickers = tuple(
+            str(item.get("ticker"))
+            for item in series_payload.get("series", [])
+            if isinstance(item, dict) and item.get("ticker")
+        )
+        for series_ticker in series_tickers:
+            series_categories[series_ticker] = category
+            cursor = ""
+            while pages_seen < scan_pages:
+                params: dict[str, Any] = {"status": "open", "limit": 100, "series_ticker": series_ticker}
+                if cursor:
+                    params["cursor"] = cursor
+                market_payload = client.get("/markets", params=params)
+                batches.append(tuple(item for item in market_payload.get("markets", []) if isinstance(item, dict)))
+                pages_seen += 1
+                cursor = str(market_payload.get("cursor") or "")
+                if not cursor:
+                    break
+            if pages_seen >= scan_pages:
+                return tuple(batches)
+    return tuple(batches)
 
 
 def score_orderbook_payload(payload: dict[str, Any]) -> tuple[LiquidMarketCandidate, ...]:

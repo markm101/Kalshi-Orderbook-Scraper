@@ -13,7 +13,7 @@ from kalshi_capture.config import read_env_file
 from kalshi_capture.discovery import DiscoveryResult, MarketMetadata, SeriesMetadata
 from kalshi_capture.gaps import GapLogger
 from kalshi_capture.orderbook import extract_orderbook_tickers, flatten_orderbook_payload
-from kalshi_capture.selector import market_passes_filters, score_orderbook_payload
+from kalshi_capture.selector import market_passes_filters, score_orderbook_payload, select_liquid_tickers
 from kalshi_capture.storage import write_metadata, write_orderbook_rows
 from scripts.derive_bid_ask import derive_capture, derive_rows
 from scripts.inspect_capture import inspect_capture
@@ -29,6 +29,7 @@ def main() -> None:
     check_derived_bid_ask()
     check_liquid_selector_scoring()
     check_liquid_selector_filters()
+    check_liquid_selector_category_seed()
     check_spread_depth_report()
     print("offline checks passed")
 
@@ -286,6 +287,37 @@ def check_liquid_selector_filters() -> None:
     assert not market_passes_filters(FakeClient(), {**market, "close_time": "2000-01-01T00:00:00Z"}, cache, min_close_hours=1)
     assert not market_passes_filters(FakeClient(), market, cache, min_volume=500)
     assert not market_passes_filters(FakeClient(), market, cache, min_open_interest=500)
+
+
+def check_liquid_selector_category_seed() -> None:
+    class FakeClient:
+        def get(self, path: str, params=None):
+            if path == "/series":
+                assert params["category"] == "Sports"
+                return {"series": [{"ticker": "SERIES"}]}
+            if path == "/markets":
+                assert params["series_ticker"] == "SERIES"
+                return {
+                    "markets": [
+                        {
+                            "ticker": "T1",
+                            "series_ticker": "SERIES",
+                            "close_time": "2999-01-01T00:00:00Z",
+                        }
+                    ]
+                }
+            if path == "/markets/orderbooks":
+                return {
+                    "orderbooks": [
+                        {
+                            "ticker": "T1",
+                            "orderbook_fp": {"yes_dollars": [["0.4500", "10.00"]], "no_dollars": []},
+                        }
+                    ]
+                }
+            raise AssertionError(path)
+
+    assert select_liquid_tickers(FakeClient(), 1, include_categories=("Sports",)) == ("T1",)
 
 
 def check_spread_depth_report() -> None:
