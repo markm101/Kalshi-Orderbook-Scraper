@@ -52,7 +52,7 @@ Implemented behavior:
 - `.env` loading from project root
 - read-only dry-run mode
 - market discovery by tickers, series, categories
-- automatic liquid-market selection with `--select-liquid`
+- automatic liquid-market selection with `--select-liquid`, category filters, close-time filters, and volume/open-interest filters
 - series/category metadata enrichment
 - batch orderbook polling through `/markets/orderbooks`
 - CSV storage by `category=<Category>/date=<YYYY-MM-DD>/orderbook.csv`
@@ -252,6 +252,12 @@ Auto-select currently active/liquid markets:
 python -m kalshi_capture.main --env prod --select-liquid 5 --output-dir exports/liquid_smoke --once
 ```
 
+Filtered auto-selection:
+
+```bash
+python -m kalshi_capture.main --env prod --select-liquid 10 --selector-categories Sports --min-close-hours 6 --min-top-level-size 100 --output-dir exports/sports_liquid --once
+```
+
 Timed capture:
 
 ```bash
@@ -298,7 +304,6 @@ Do not commit secrets or generated capture exports.
 
 High-value next tasks:
 
-1. Add category-aware liquid selection and close-time/volume filters.
-2. Add spread/depth report scripts for derived bid/ask output.
-3. Add long-run deployment notes for `launchd`, `systemd`, or Docker.
-4. Consider WebSocket capture only if REST polling resolution is insufficient.
+1. Add spread/depth report scripts for derived bid/ask output.
+2. Add long-run deployment notes for `launchd`, `systemd`, or Docker.
+3. Consider WebSocket capture only if REST polling resolution is insufficient.

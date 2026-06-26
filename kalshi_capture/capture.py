@@ -90,6 +90,11 @@ def _discover(config: Config, client: KalshiClient, gap_logger: GapLogger) -> Di
                 scan_pages=config.liquid_scan_pages,
                 min_rows=config.min_orderbook_rows,
                 min_top_level_size=config.min_top_level_size,
+                include_categories=config.selector_categories,
+                exclude_categories=config.selector_exclude_categories,
+                min_close_hours=config.min_close_hours,
+                min_volume=config.min_volume,
+                min_open_interest=config.min_open_interest,
             )
             logging.info("selected liquid tickers=%s", selected)
             tickers = tuple(dict.fromkeys((*tickers, *selected)))

@@ -13,7 +13,7 @@ from kalshi_capture.config import read_env_file
 from kalshi_capture.discovery import DiscoveryResult, MarketMetadata, SeriesMetadata
 from kalshi_capture.gaps import GapLogger
 from kalshi_capture.orderbook import extract_orderbook_tickers, flatten_orderbook_payload
-from kalshi_capture.selector import score_orderbook_payload
+from kalshi_capture.selector import market_passes_filters, score_orderbook_payload
 from kalshi_capture.storage import write_metadata, write_orderbook_rows
 from scripts.derive_bid_ask import derive_capture, derive_rows
 from scripts.inspect_capture import inspect_capture
@@ -27,6 +27,7 @@ def main() -> None:
     check_capture_inspector()
     check_derived_bid_ask()
     check_liquid_selector_scoring()
+    check_liquid_selector_filters()
     print("offline checks passed")
 
 
@@ -252,6 +253,37 @@ def check_liquid_selector_scoring() -> None:
     assert scores["T1"].top_level_size == 150
     assert scores["T2"].rows == 1
     assert scores["T2"].top_level_size == 10
+
+
+def check_liquid_selector_filters() -> None:
+    class FakeClient:
+        def get(self, path: str, params=None):
+            assert path == "/series/SERIES"
+            return {"series": {"category": "Sports"}}
+
+    market = {
+        "ticker": "T1",
+        "event_ticker": "SERIES-TEST",
+        "close_time": "2999-01-01T00:00:00Z",
+        "volume": "125",
+        "open_interest": "250",
+    }
+    cache: dict[str, str] = {}
+    assert market_passes_filters(
+        FakeClient(),
+        market,
+        cache,
+        include_categories=("Sports",),
+        min_close_hours=1,
+        min_volume=100,
+        min_open_interest=200,
+    )
+    assert cache == {"SERIES": "Sports"}
+    assert not market_passes_filters(FakeClient(), market, cache, include_categories=("Financials",))
+    assert not market_passes_filters(FakeClient(), market, cache, exclude_categories=("Sports",))
+    assert not market_passes_filters(FakeClient(), {**market, "close_time": "2000-01-01T00:00:00Z"}, cache, min_close_hours=1)
+    assert not market_passes_filters(FakeClient(), market, cache, min_volume=500)
+    assert not market_passes_filters(FakeClient(), market, cache, min_open_interest=500)
 
 
 if __name__ == "__main__":

@@ -23,6 +23,11 @@ class Config:
     liquid_scan_pages: int
     min_orderbook_rows: int
     min_top_level_size: int
+    selector_categories: tuple[str, ...]
+    selector_exclude_categories: tuple[str, ...]
+    min_close_hours: float
+    min_volume: int
+    min_open_interest: int
     series: tuple[str, ...]
     categories: tuple[str, ...]
     exclude_categories: tuple[str, ...]
@@ -69,6 +74,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--liquid-scan-pages", type=int, default=5, help="Open-market pages to scan for liquid selection")
     parser.add_argument("--min-orderbook-rows", type=int, default=1, help="Minimum orderbook rows required for liquid selection")
     parser.add_argument("--min-top-level-size", type=int, default=0, help="Minimum combined level-0 size required for liquid selection")
+    parser.add_argument("--selector-categories", default="", help="Comma-separated categories for liquid selection only")
+    parser.add_argument("--selector-exclude-categories", default="", help="Comma-separated categories to skip during liquid selection only")
+    parser.add_argument("--min-close-hours", type=float, default=0.0, help="Minimum hours before close for liquid selection")
+    parser.add_argument("--min-volume", type=int, default=0, help="Minimum market volume for liquid selection when available")
+    parser.add_argument("--min-open-interest", type=int, default=0, help="Minimum open interest for liquid selection when available")
     parser.add_argument("--series", default="", help="Comma-separated series tickers")
     parser.add_argument("--categories", default="", help="Comma-separated series categories")
     parser.add_argument("--exclude-categories", default="", help="Comma-separated categories to skip")
@@ -110,6 +120,12 @@ def load_config(argv: list[str] | None = None) -> Config:
         raise SystemExit("--min-orderbook-rows must be 0 or greater")
     if args.min_top_level_size < 0:
         raise SystemExit("--min-top-level-size must be 0 or greater")
+    if args.min_close_hours < 0:
+        raise SystemExit("--min-close-hours must be 0 or greater")
+    if args.min_volume < 0:
+        raise SystemExit("--min-volume must be 0 or greater")
+    if args.min_open_interest < 0:
+        raise SystemExit("--min-open-interest must be 0 or greater")
     if args.duration_seconds < 0:
         raise SystemExit("--duration-seconds must be 0 or greater")
     if args.heartbeat_seconds <= 0:
@@ -127,6 +143,11 @@ def load_config(argv: list[str] | None = None) -> Config:
         liquid_scan_pages=args.liquid_scan_pages,
         min_orderbook_rows=args.min_orderbook_rows,
         min_top_level_size=args.min_top_level_size,
+        selector_categories=parse_csv(args.selector_categories),
+        selector_exclude_categories=parse_csv(args.selector_exclude_categories),
+        min_close_hours=args.min_close_hours,
+        min_volume=args.min_volume,
+        min_open_interest=args.min_open_interest,
         series=parse_csv(args.series),
         categories=parse_csv(args.categories),
         exclude_categories=parse_csv(args.exclude_categories),
