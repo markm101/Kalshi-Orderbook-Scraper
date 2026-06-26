@@ -126,6 +126,21 @@ KALSHI_PRIVATE_KEY_PATH
 
 Important signing detail: Kalshi currently requires signing the API path without query parameters.
 
+You can also place these values in a local `.env` file at the project root. `.env` is ignored by Git.
+
+```bash
+KALSHI_KEY_ID=your-api-key-id
+KALSHI_PRIVATE_KEY_PATH=/path/to/kalshi-private-key.key
+```
+
+Keep the private key file outside this repository. The `.env` file should contain the path to the key file, not the key text itself.
+
+Production testing should use read-only commands first:
+
+```bash
+python -m kalshi_capture.main --env prod --dry-run
+```
+
 ## Example Planned Usage
 
 Install dependencies:

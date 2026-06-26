@@ -33,6 +33,23 @@ class Config:
     log_level: str
 
 
+def read_env_file(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+
+    values: dict[str, str] = {}
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            values[key] = value
+    return values
+
+
 def parse_csv(value: str | None) -> tuple[str, ...]:
     if not value:
         return ()
@@ -60,8 +77,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def load_config(argv: list[str] | None = None) -> Config:
     args = build_parser().parse_args(argv)
-    key_id = os.environ.get("KALSHI_KEY_ID", "").strip()
-    private_key_path = os.environ.get("KALSHI_PRIVATE_KEY_PATH", "").strip()
+    env_file = read_env_file(Path(".env"))
+    key_id = os.environ.get("KALSHI_KEY_ID", env_file.get("KALSHI_KEY_ID", "")).strip()
+    private_key_path = os.environ.get(
+        "KALSHI_PRIVATE_KEY_PATH",
+        env_file.get("KALSHI_PRIVATE_KEY_PATH", ""),
+    ).strip()
 
     if not key_id:
         raise SystemExit("KALSHI_KEY_ID is required")

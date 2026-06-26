@@ -8,6 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from kalshi_capture.config import read_env_file
 from kalshi_capture.discovery import DiscoveryResult, MarketMetadata, SeriesMetadata
 from kalshi_capture.gaps import GapLogger
 from kalshi_capture.orderbook import extract_orderbook_tickers, flatten_orderbook_payload
@@ -18,6 +19,7 @@ def main() -> None:
     check_orderbook_flattening()
     check_storage_writes()
     check_gap_logger()
+    check_env_file_parser()
     print("offline checks passed")
 
 
@@ -94,6 +96,19 @@ def check_gap_logger() -> None:
     text = (output_dir / "gaps.csv").read_text()
     assert "ts_ms,ticker,event_type,detail" in text
     assert "missing_orderbook" in text
+
+
+def check_env_file_parser() -> None:
+    temp_dir = Path(tempfile.mkdtemp())
+    env_path = temp_dir / ".env"
+    env_path.write_text(
+        "# comment\n"
+        "KALSHI_KEY_ID='example-key-id'\n"
+        'KALSHI_PRIVATE_KEY_PATH="/tmp/key.txt"\n'
+    )
+    values = read_env_file(env_path)
+    assert values["KALSHI_KEY_ID"] == "example-key-id"
+    assert values["KALSHI_PRIVATE_KEY_PATH"] == "/tmp/key.txt"
 
 
 if __name__ == "__main__":
