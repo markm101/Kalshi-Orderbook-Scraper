@@ -46,6 +46,24 @@ This matters for realistic backtesting, especially for sizing, liquidity filters
 
 ## Current Status
 
+V1 is complete and publishable as a read-only Kalshi order book capture tool.
+
+The current release is suitable for:
+
+- authenticated read-only market data capture
+- one-shot and timed order book snapshots
+- liquid-market discovery for capture setup
+- raw CSV dataset accumulation by ticker
+- derived bid/ask exports for analysis
+- spread/depth reporting for backtesting realism checks
+
+Still out of scope for v1:
+
+- trading or order placement
+- a full backtest engine
+- WebSocket capture
+- historical reconstruction before the collector was running
+
 Implemented:
 
 - Kalshi RSA-PSS authentication
@@ -55,7 +73,7 @@ Implemented:
 - automatic selection of open markets currently returning order book rows
 - series/category metadata export
 - batch order book polling with up to 100 tickers per request
-- CSV output partitioned by category and UTC date
+- CSV output by ticker under `orderbooks/<ticker>.csv`
 - gap logging
 - graceful shutdown
 - heartbeat logging
@@ -218,6 +236,13 @@ Recommended starting defaults:
 - `--max-levels 0` to store all returned levels
 
 Use a unique output directory per run, such as `exports/captures/<UTC_RUN_ID>_<description>/`.
+
+## Post-V1 Roadmap
+
+- Run a 30- to 120-minute capture and review output quality.
+- Consider WebSocket capture only if REST polling resolution is not enough.
+- Add slippage reports or visualization after more capture data exists.
+- Add packaging/deployment automation if the collector will run unattended often.
 
 ## Troubleshooting
 

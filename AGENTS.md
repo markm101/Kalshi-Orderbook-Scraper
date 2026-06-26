@@ -20,6 +20,10 @@ Out of scope:
 
 ## Current Implementation
 
+V1 is complete and publishable as a read-only REST polling capture tool. The project now has auth, discovery, liquid selection, raw capture, metadata, gap logging, run summaries, derived bid/ask export, spread/depth reporting, and a v1 runbook.
+
+Post-v1 work should focus on longer capture validation, optional WebSocket capture if REST polling is insufficient, and analysis helpers such as slippage reporting. Do not add trading behavior.
+
 Package layout:
 
 ```text
@@ -170,7 +174,7 @@ Rules:
 - `price` is fixed units where `10000 = $1.0000`.
 - `size` is fixed count units where `100 = 1 contract`.
 - `snapshot_id = capture_ts_ms:ticker`.
-- Category is not stored in raw rows. It is encoded in the directory path and stored in `metadata/series.csv`.
+- Category is not stored in raw rows. It is stored in `metadata/series.csv`; orderbook files are written by ticker.
 
 Flattening example:
 
@@ -319,9 +323,10 @@ git diff --stat
 
 Do not commit secrets or generated capture exports.
 
-## Recommended Next Work
+## Post-V1 Next Work
 
 High-value next tasks:
 
 1. Run a 30- to 120-minute timed capture and review output quality.
 2. Consider WebSocket capture only if REST polling resolution is insufficient.
+3. Consider slippage reporting/visualization after more capture data exists.
