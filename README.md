@@ -1,60 +1,156 @@
-# Kalshi Order Book Dataset Capture
+# Kalshi Order Book Capture
 
-This project captures live Kalshi order book snapshots to build a historical dataset for strategy research and backtesting.
+This project collects live Kalshi order book snapshots so we can build our own historical order book dataset for strategy research and realistic backtesting.
 
-Kalshi does not provide historical full-depth order books through its public API. The only reliable way to get historical depth is to collect the current order book continuously going forward.
+Kalshi offers price history, trades, and candles, but those are not the same as full order book history. Price history can show where a market traded or quoted. Order book history shows whether there was actually enough liquidity to trade size at a given time.
 
-## Scope
+## What This Is
 
-This is a data ingestion project only.
+This is a read-only data capture tool.
+
+It collects:
+
+- current YES and NO bid books
+- market metadata
+- series/category metadata
+- gap logs
+- run summaries
 
 It does not:
 
 - place trades
-- manage orders
-- implement strategies
-- run backtests
-- reconstruct order book history from before capture started
+- cancel orders
+- manage a portfolio
+- implement a strategy
+- run a backtest
+- recreate order books from before the collector was running
 
-## Planned Capture Method
+## Why Order Book Data Matters
 
-The collector will use Kalshi's REST API to bulk-poll current order books.
-
-For many tickers, it will prefer:
+Price history can answer:
 
 ```text
-GET /markets/orderbooks?tickers=TICKER1&tickers=TICKER2
+Did the market move from 40c to 55c?
 ```
 
-instead of one request per market. The batch endpoint supports up to 100 tickers per request, which reduces rate-limit risk and improves timestamp consistency.
-
-## Data Layout
-
-Output will be CSV, partitioned by category and UTC date.
+Order book history can answer:
 
 ```text
-data/
+Could I actually buy size at 40c?
+How much slippage would I have taken?
+Was the spread tradable?
+How much depth was available?
+```
+
+This matters for realistic backtesting, especially for sizing, liquidity filters, spread-aware execution, and passive order assumptions.
+
+## Current Status
+
+Implemented:
+
+- Kalshi RSA-PSS authentication
+- production/demo REST environment support
+- local `.env` loading
+- market discovery by ticker, series, or category
+- series/category metadata export
+- batch order book polling with up to 100 tickers per request
+- CSV output partitioned by category and UTC date
+- gap logging
+- graceful shutdown
+- heartbeat logging
+- duration-limited captures
+- run summaries
+- local ignored `exports/` directory for reviewing test CSVs
+- offline validation script
+- capture inspection script
+- derived bid/ask export script
+
+## Install
+
+Use Python 3.11+.
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+No extra packages are needed beyond `requirements.txt`.
+
+## Credentials
+
+Create a local `.env` file in the project root:
+
+```bash
+KALSHI_KEY_ID=your-api-key-id
+KALSHI_PRIVATE_KEY_PATH=/path/to/kalshi-private-key.key
+```
+
+Keep the private key file outside this repository. Do not paste the private key into chat. Do not commit `.env`.
+
+`.env` is ignored by Git.
+
+## Quick Safety Check
+
+Run this first. It only calls read-only endpoints.
+
+```bash
+python -m kalshi_capture.main --env prod --dry-run
+```
+
+This checks that authentication and signing work.
+
+## One-Shot Capture
+
+Run one read-only order book capture cycle:
+
+```bash
+python -m kalshi_capture.main \
+  --env prod \
+  --tickers MARKET-TICKER \
+  --output-dir exports/smoke_one_ticker \
+  --once
+```
+
+Inspect the result:
+
+```bash
+python scripts/inspect_capture.py exports/smoke_one_ticker
+```
+
+## Short Timed Capture
+
+Run a short capture for review:
+
+```bash
+python -m kalshi_capture.main \
+  --env prod \
+  --tickers MARKET-TICKER-1,MARKET-TICKER-2 \
+  --output-dir exports/short_capture \
+  --interval 2.0 \
+  --duration-seconds 120
+```
+
+Generated files under `exports/` are ignored by Git so you can inspect CSVs locally without committing captured data.
+
+## Output Layout
+
+```text
+exports/short_capture/
   orderbooks/
-    category=Sports/
-      date=2026-06-26/
-        orderbook.csv
-    category=Weather/
-      date=2026-06-26/
-        orderbook.csv
-    category=Politics/
+    category=Exotics/
       date=2026-06-26/
         orderbook.csv
   metadata/
     markets.csv
     series.csv
   gaps.csv
+  run_summary.json
 ```
 
-Category is stored in the directory path, not in each order book row.
+Category is stored in the directory path, not in every order book row.
 
-## Order Book Schema
+## Raw Order Book CSV
 
-Each order book CSV contains:
+Raw rows store exactly the bid books Kalshi returns.
 
 ```text
 capture_ts_ms,ticker,side,level,price,size,snapshot_id
@@ -65,12 +161,10 @@ Columns:
 - `capture_ts_ms`: local capture timestamp in milliseconds since epoch
 - `ticker`: Kalshi market ticker
 - `side`: `yes` or `no` bid side
-- `level`: 0 is the best bid for that side
-- `price`: price in fixed units where `10000` equals `$1.0000`
-- `size`: resting contracts at that level
-- `snapshot_id`: stable grouping key for one ticker's captured book at one timestamp
-
-Kalshi REST order books return YES bids and NO bids only. Explicit asks are not returned because binary market asks can be derived from the opposite side's bids.
+- `level`: depth level, where `0` is best bid for that side
+- `price`: fixed units where `10000` equals `$1.0000`
+- `size`: resting contracts at that price level
+- `snapshot_id`: grouping key for one ticker's captured book at one timestamp
 
 Price examples:
 
@@ -80,15 +174,29 @@ Price examples:
 10000 = $1.0000
 ```
 
-## Derived Bid/Ask View
+Kalshi REST order books return YES bids and NO bids only. They do not return explicit asks. In binary markets, the opposite side implies asks.
 
-Raw capture stores the bid books Kalshi returns. For backtesting, create a derived bid/ask view:
+Example:
 
-```bash
-python scripts/derive_bid_ask.py exports/short_capture_active exports/short_capture_active_derived
+```text
+NO bid 9370 implies YES ask 630
 ```
 
-Derived CSV rows contain:
+because:
+
+```text
+10000 - 9370 = 630
+```
+
+## Derived Bid/Ask CSV
+
+For backtesting, create a derived bid/ask view:
+
+```bash
+python scripts/derive_bid_ask.py exports/short_capture exports/short_capture_derived
+```
+
+Derived rows contain:
 
 ```text
 capture_ts_ms,snapshot_id,ticker,outcome,book_side,level,price,size
@@ -101,180 +209,43 @@ YES bid -> YES bid and NO ask at 10000 - price
 NO bid  -> NO bid and YES ask at 10000 - price
 ```
 
-## Metadata
-
-Market metadata will be stored separately:
-
-```text
-data/metadata/markets.csv
-```
-
-Series metadata will be stored separately:
-
-```text
-data/metadata/series.csv
-```
-
-Series metadata contains the category mapping used to write order books into category directories.
-
-## Gap Log
-
-Capture failures are recorded in:
-
-```text
-data/gaps.csv
-```
-
-This file is important for backtesting because failed polls create unrecoverable holes in the order book history.
-
-Each capture run also writes:
-
-```text
-run_summary.json
-```
-
-This includes row counts, batch counts, error counts, zero-row batch counts, and run duration.
-
-## Kalshi Environments
-
-Demo REST API:
-
-```text
-https://external-api.demo.kalshi.co/trade-api/v2
-```
-
-Production REST API:
-
-```text
-https://external-api.kalshi.com/trade-api/v2
-```
-
-Initial testing should use demo.
-
-## Authentication
-
-The collector will use Kalshi API-key authentication with RSA-PSS signing.
-
-Required environment variables:
-
-```text
-KALSHI_KEY_ID
-KALSHI_PRIVATE_KEY_PATH
-```
-
-Important signing detail: Kalshi currently requires signing the API path without query parameters.
-
-You can also place these values in a local `.env` file at the project root. `.env` is ignored by Git.
-
-```bash
-KALSHI_KEY_ID=your-api-key-id
-KALSHI_PRIVATE_KEY_PATH=/path/to/kalshi-private-key.key
-```
-
-Keep the private key file outside this repository. The `.env` file should contain the path to the key file, not the key text itself.
-
-Production testing should use read-only commands first:
-
-```bash
-python -m kalshi_capture.main --env prod --dry-run
-```
-
-## Example Planned Usage
-
-Install dependencies:
-
-```bash
-python -m pip install -r requirements.txt
-```
-
-Authenticated demo smoke test:
-
-```bash
-export KALSHI_KEY_ID="your-api-key-id"
-export KALSHI_PRIVATE_KEY_PATH="/path/to/kalshi-private-key.key"
-
-python -m kalshi_capture.main --env demo --dry-run
-```
-
-Discover open markets for a series and write metadata CSVs:
-
-```bash
-python -m kalshi_capture.main \
-  --env demo \
-  --series KXHIGHNY \
-  --output-dir data \
-  --discover-only
-```
-
-Run one read-only order book capture cycle:
-
-```bash
-python -m kalshi_capture.main \
-  --env demo \
-  --series KXHIGHNY \
-  --output-dir data \
-  --once
-```
-
-Run offline checks without calling Kalshi:
-
-```bash
-python scripts/offline_checks.py
-```
-
-Inspect a capture output directory:
-
-```bash
-python scripts/inspect_capture.py exports/smoke_one_ticker
-```
-
-The inspector reports row counts, ticker counts, category/date partitions, gap events, run summary values, and simple depth/spread metrics.
-
-Run one read-only production order book capture cycle:
-
-```bash
-python -m kalshi_capture.main \
-  --env prod \
-  --tickers MARKET-TICKER \
-  --output-dir exports/smoke_one_ticker \
-  --once
-```
-
-Generated files under `exports/` are ignored by Git so you can inspect CSVs locally without committing captured data.
-
-Run a short timed production capture:
-
-```bash
-python -m kalshi_capture.main \
-  --env prod \
-  --tickers MARKET-TICKER-1,MARKET-TICKER-2 \
-  --output-dir exports/short_capture \
-  --interval 2.0 \
-  --duration-seconds 120
-```
-
-Then inspect it:
+## Inspect A Capture
 
 ```bash
 python scripts/inspect_capture.py exports/short_capture
 ```
 
-```bash
-python -m kalshi_capture.main \
-  --env demo \
-  --categories Sports,Weather \
-  --interval 2.0 \
-  --output-dir data
-```
+The inspector reports:
+
+- order book file count
+- row count
+- unique tickers
+- categories
+- dates
+- first/last capture timestamps
+- snapshot count
+- total depth size
+- top-level depth size
+- gap event counts
+- run summary values
+- basic spread metrics when both YES and NO best bids are present
+
+## Offline Checks
+
+Run checks that do not call Kalshi:
 
 ```bash
-python -m kalshi_capture.main \
-  --env demo \
-  --series KXHIGHNY,KXNBA \
-  --interval 2.0 \
-  --output-dir data
+python scripts/offline_checks.py
 ```
 
-## More Detail
+## Important Files
 
-See `documentation.md` for the full implementation plan, verified API details, schemas, and operational requirements.
+- `kalshi_capture/main.py`: CLI entry point
+- `kalshi_capture/client.py`: signed REST client
+- `kalshi_capture/discovery.py`: market and series discovery
+- `kalshi_capture/orderbook.py`: order book polling and flattening
+- `kalshi_capture/capture.py`: capture loop
+- `kalshi_capture/storage.py`: CSV writers
+- `scripts/inspect_capture.py`: local output inspection
+- `scripts/derive_bid_ask.py`: raw-to-derived bid/ask conversion
+- `AGENTS.md`: implementation context for coding agents
