@@ -1,4 +1,8 @@
 documentation.md
 checkins/
+.env
+.env.*
+*.key
+*key.txt
 __pycache__/
 *.py[cod]
