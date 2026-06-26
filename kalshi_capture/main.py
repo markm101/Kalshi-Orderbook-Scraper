@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import signal
 from typing import Any
 
 from kalshi_capture.auth import load_private_key
@@ -49,6 +50,18 @@ def discover_only(config: Config) -> None:
     )
 
 
+def install_signal_handlers() -> dict[str, bool]:
+    state = {"stop": False}
+
+    def request_stop(signum: int, _frame: object) -> None:
+        logging.info("received signal=%s; stopping after current cycle", signum)
+        state["stop"] = True
+
+    signal.signal(signal.SIGINT, request_stop)
+    signal.signal(signal.SIGTERM, request_stop)
+    return state
+
+
 def main(argv: list[str] | None = None) -> int:
     config = load_config(argv)
     configure_logging(config.log_level)
@@ -61,9 +74,10 @@ def main(argv: list[str] | None = None) -> int:
         discover_only(config)
         return 0
 
+    signal_state = install_signal_handlers()
     private_key = load_private_key(config.private_key_path)
     with KalshiClient(config.base_url, config.key_id, private_key) as client:
-        run_capture(config, client)
+        run_capture(config, client, stop_requested=lambda: signal_state["stop"])
     return 0
 
 

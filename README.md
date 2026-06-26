@@ -163,6 +163,12 @@ python -m kalshi_capture.main \
   --once
 ```
 
+Run offline checks without calling Kalshi:
+
+```bash
+python scripts/offline_checks.py
+```
+
 ```bash
 python -m kalshi_capture.main \
   --env demo \

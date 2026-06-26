@@ -17,18 +17,35 @@ class OrderBookRow:
     size: int
 
 
+@dataclass(frozen=True)
+class OrderBookBatch:
+    rows: tuple[OrderBookRow, ...]
+    returned_tickers: tuple[str, ...]
+
+
 def fetch_orderbooks(
     client: KalshiClient,
     tickers: tuple[str, ...],
     capture_ts_ms: int,
     max_levels: int = 0,
 ) -> tuple[OrderBookRow, ...]:
+    return fetch_orderbook_batch(client, tickers, capture_ts_ms, max_levels=max_levels).rows
+
+
+def fetch_orderbook_batch(
+    client: KalshiClient,
+    tickers: tuple[str, ...],
+    capture_ts_ms: int,
+    max_levels: int = 0,
+) -> OrderBookBatch:
     rows: list[OrderBookRow] = []
+    returned_tickers: list[str] = []
     for chunk in _chunks(tickers, 100):
         params = [("tickers", ticker) for ticker in chunk]
         payload = client.get("/markets/orderbooks", params=params)
         rows.extend(flatten_orderbook_payload(payload, capture_ts_ms, max_levels=max_levels))
-    return tuple(rows)
+        returned_tickers.extend(extract_orderbook_tickers(payload))
+    return OrderBookBatch(rows=tuple(rows), returned_tickers=tuple(returned_tickers))
 
 
 def flatten_orderbook_payload(
@@ -53,6 +70,21 @@ def flatten_orderbook_payload(
         rows.extend(_flatten_side(capture_ts_ms, ticker, "yes", book.get("yes_dollars"), max_levels))
         rows.extend(_flatten_side(capture_ts_ms, ticker, "no", book.get("no_dollars"), max_levels))
     return tuple(rows)
+
+
+def extract_orderbook_tickers(payload: dict[str, Any]) -> tuple[str, ...]:
+    orderbooks = payload.get("orderbooks")
+    if not isinstance(orderbooks, list):
+        raise ValueError("Expected orderbooks list in response")
+
+    tickers: list[str] = []
+    for item in orderbooks:
+        if not isinstance(item, dict):
+            continue
+        ticker = str(item.get("ticker") or "")
+        if ticker:
+            tickers.append(ticker)
+    return tuple(tickers)
 
 
 def _flatten_side(

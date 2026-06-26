@@ -71,6 +71,10 @@ def load_config(argv: list[str] | None = None) -> Config:
         raise SystemExit("--interval must be greater than 0")
     if args.max_levels < 0:
         raise SystemExit("--max-levels must be 0 or greater")
+    if args.heartbeat_seconds <= 0:
+        raise SystemExit("--heartbeat-seconds must be greater than 0")
+    if args.discovery_refresh_seconds <= 0:
+        raise SystemExit("--discovery-refresh-seconds must be greater than 0")
 
     return Config(
         env=args.env,
