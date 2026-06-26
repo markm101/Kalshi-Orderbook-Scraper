@@ -195,7 +195,7 @@ python scripts/offline_checks.py
 Inspect a capture output directory:
 
 ```bash
-python scripts/inspect_capture.py data
+python scripts/inspect_capture.py exports/smoke_one_ticker
 ```
 
 Run one read-only production order book capture cycle:
@@ -204,9 +204,11 @@ Run one read-only production order book capture cycle:
 python -m kalshi_capture.main \
   --env prod \
   --tickers MARKET-TICKER \
-  --output-dir data_smoke \
+  --output-dir exports/smoke_one_ticker \
   --once
 ```
+
+Generated files under `exports/` are ignored by Git so you can inspect CSVs locally without committing captured data.
 
 ```bash
 python -m kalshi_capture.main \

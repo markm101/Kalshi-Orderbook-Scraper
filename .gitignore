@@ -4,5 +4,7 @@ checkins/
 .env.*
 *.key
 *key.txt
+exports/*
+!exports/README.md
 __pycache__/
 *.py[cod]
