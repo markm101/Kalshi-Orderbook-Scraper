@@ -128,6 +128,21 @@ Important signing detail: Kalshi currently requires signing the API path without
 
 ## Example Planned Usage
 
+Install dependencies:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Authenticated demo smoke test:
+
+```bash
+export KALSHI_KEY_ID="your-api-key-id"
+export KALSHI_PRIVATE_KEY_PATH="/path/to/kalshi-private-key.key"
+
+python -m kalshi_capture.main --env demo --dry-run
+```
+
 ```bash
 python -m kalshi_capture.main \
   --env demo \

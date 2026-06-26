@@ -1,1 +1,3 @@
 documentation.md
+__pycache__/
+*.py[cod]
