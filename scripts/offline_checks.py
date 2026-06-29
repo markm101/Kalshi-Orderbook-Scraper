@@ -30,6 +30,7 @@ def main() -> None:
     check_liquid_selector_scoring()
     check_liquid_selector_filters()
     check_liquid_selector_category_seed()
+    check_liquid_selector_ranks_beyond_first_match()
     check_spread_depth_report()
     print("offline checks passed")
 
@@ -304,11 +305,13 @@ def check_liquid_selector_category_seed() -> None:
                     "markets": [
                         {
                             "ticker": "T1",
-                            "series_ticker": "SERIES",
+                            "event_ticker": "SERIES-TEST",
                             "close_time": "2999-01-01T00:00:00Z",
                         }
                     ]
                 }
+            if path.startswith("/series/"):
+                raise AssertionError(f"unexpected series lookup: {path}")
             if path == "/markets/orderbooks":
                 return {
                     "orderbooks": [
@@ -321,6 +324,54 @@ def check_liquid_selector_category_seed() -> None:
             raise AssertionError(path)
 
     assert select_liquid_tickers(FakeClient(), 1, include_categories=("Sports",)) == ("T1",)
+
+
+def check_liquid_selector_ranks_beyond_first_match() -> None:
+    class FakeClient:
+        def get(self, path: str, params=None):
+            if path == "/series":
+                return {"series": [{"ticker": "SERIES1"}, {"ticker": "SERIES2"}]}
+            if path == "/markets" and params["series_ticker"] == "SERIES1":
+                return {
+                    "markets": [
+                        {
+                            "ticker": "WEAK",
+                            "series_ticker": "SERIES1",
+                            "close_time": "2999-01-01T00:00:00Z",
+                            "volume": "10",
+                            "open_interest": "10",
+                        }
+                    ]
+                }
+            if path == "/markets" and params["series_ticker"] == "SERIES2":
+                return {
+                    "markets": [
+                        {
+                            "ticker": "STRONG",
+                            "series_ticker": "SERIES2",
+                            "close_time": "2999-01-02T00:00:00Z",
+                            "volume": "1000",
+                            "open_interest": "1000",
+                        }
+                    ]
+                }
+            if path == "/markets/orderbooks":
+                tickers = tuple(value for key, value in params if key == "tickers")
+                return {
+                    "orderbooks": [
+                        {
+                            "ticker": ticker,
+                            "orderbook_fp": {
+                                "yes_dollars": [["0.4500", "10.00" if ticker == "WEAK" else "100.00"]],
+                                "no_dollars": [],
+                            },
+                        }
+                        for ticker in tickers
+                    ]
+                }
+            raise AssertionError(path)
+
+    assert select_liquid_tickers(FakeClient(), 1, scan_pages=1, include_categories=("Sports",)) == ("STRONG",)
 
 
 def check_spread_depth_report() -> None:

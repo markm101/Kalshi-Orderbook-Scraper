@@ -174,7 +174,7 @@ python -m kalshi_capture.main \
 
 Optional selector filters:
 
-- `--liquid-scan-pages 5`: number of open-market pages to scan
+- `--liquid-scan-pages 5`: search-depth knob for open-market pages; category selection scans across matching series before ranking candidates
 - `--min-orderbook-rows 1`: minimum returned book rows per selected ticker
 - `--min-top-level-size 0`: minimum combined best-level size across YES and NO bids
 - `--selector-categories Sports,Financials`: only select markets from these categories
@@ -182,6 +182,8 @@ Optional selector filters:
 - `--min-close-hours 6`: only select markets closing at least this many hours from now
 - `--min-volume 100`: only select markets with at least this reported volume, when available
 - `--min-open-interest 100`: only select markets with at least this reported open interest, when available
+
+The selector ranks all candidates found in the scan, preferring reported volume, open interest, visible top-level depth, and book rows. Use `--min-close-hours` to exclude markets that are too close to settlement.
 
 Example filtered selector run:
 
