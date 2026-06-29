@@ -15,6 +15,7 @@ class LiquidMarketCandidate:
     ticker: str
     rows: int
     top_level_size: int
+    group_key: str = ""
     close_ts_ms: int | None = None
     volume: int = 0
     open_interest: int = 0
@@ -122,6 +123,7 @@ def _add_candidates(
                 ticker=candidate.ticker,
                 rows=candidate.rows,
                 top_level_size=candidate.top_level_size,
+                group_key=_market_group_key(market, candidate.ticker),
                 close_ts_ms=_close_ts_ms(market),
                 volume=_market_number(market, ("volume", "volume_24h", "previous_24_hour_volume")),
                 open_interest=_market_number(market, ("open_interest",)),
@@ -216,7 +218,16 @@ def market_passes_filters(
 
 def _rank_candidates(candidates: tuple[LiquidMarketCandidate, ...], limit: int) -> tuple[str, ...]:
     ranked = sorted(candidates, key=_candidate_sort_key)
-    return tuple(candidate.ticker for candidate in ranked[:limit])
+    selected: list[LiquidMarketCandidate] = []
+    selected_groups: set[str] = set()
+    for candidate in ranked:
+        if candidate.group_key in selected_groups:
+            continue
+        selected.append(candidate)
+        selected_groups.add(candidate.group_key)
+        if len(selected) >= limit:
+            return tuple(candidate.ticker for candidate in selected)
+    return tuple(candidate.ticker for candidate in selected)
 
 
 def _candidate_sort_key(candidate: LiquidMarketCandidate) -> tuple[int, int, int, int, int, str]:
@@ -233,6 +244,18 @@ def _candidate_sort_key(candidate: LiquidMarketCandidate) -> tuple[int, int, int
 
 def _chunks(items: tuple[str, ...], size: int) -> tuple[tuple[str, ...], ...]:
     return tuple(items[i : i + size] for i in range(0, len(items), size))
+
+
+def _market_group_key(market: dict[str, Any], ticker: str) -> str:
+    event_ticker = str(market.get("event_ticker") or "")
+    if event_ticker:
+        return event_ticker
+    series_ticker = _series_from_market(market)
+    if series_ticker:
+        return series_ticker
+    if "-" in ticker:
+        return ticker.rsplit("-", 1)[0]
+    return ticker
 
 
 def _market_category(client: KalshiClient, market: dict[str, Any], series_categories: dict[str, str]) -> str:

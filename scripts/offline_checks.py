@@ -31,6 +31,7 @@ def main() -> None:
     check_liquid_selector_filters()
     check_liquid_selector_category_seed()
     check_liquid_selector_ranks_beyond_first_match()
+    check_liquid_selector_diversifies_events()
     check_spread_depth_report()
     print("offline checks passed")
 
@@ -372,6 +373,50 @@ def check_liquid_selector_ranks_beyond_first_match() -> None:
             raise AssertionError(path)
 
     assert select_liquid_tickers(FakeClient(), 1, scan_pages=1, include_categories=("Sports",)) == ("STRONG",)
+
+
+def check_liquid_selector_diversifies_events() -> None:
+    class FakeClient:
+        def get(self, path: str, params=None):
+            if path == "/markets":
+                return {
+                    "markets": [
+                        {
+                            "ticker": "LADDER-YES-1",
+                            "event_ticker": "LADDER",
+                            "close_time": "2999-01-01T00:00:00Z",
+                            "volume": "1000",
+                        },
+                        {
+                            "ticker": "LADDER-YES-2",
+                            "event_ticker": "LADDER",
+                            "close_time": "2999-01-01T00:00:00Z",
+                            "volume": "900",
+                        },
+                        {
+                            "ticker": "OTHER-YES",
+                            "event_ticker": "OTHER",
+                            "close_time": "2999-01-01T00:00:00Z",
+                            "volume": "100",
+                        },
+                    ]
+                }
+            if path == "/markets/orderbooks":
+                top_sizes = {"LADDER-YES-1": "100.00", "LADDER-YES-2": "90.00", "OTHER-YES": "10.00"}
+                tickers = tuple(value for key, value in params if key == "tickers")
+                return {
+                    "orderbooks": [
+                        {
+                            "ticker": ticker,
+                            "orderbook_fp": {"yes_dollars": [["0.4500", top_sizes[ticker]]], "no_dollars": []},
+                        }
+                        for ticker in tickers
+                    ]
+                }
+            raise AssertionError(path)
+
+    assert select_liquid_tickers(FakeClient(), 2, scan_pages=1) == ("LADDER-YES-1", "OTHER-YES")
+    assert select_liquid_tickers(FakeClient(), 3, scan_pages=1) == ("LADDER-YES-1", "OTHER-YES")
 
 
 def check_spread_depth_report() -> None:

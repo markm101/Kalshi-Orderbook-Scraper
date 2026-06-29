@@ -153,7 +153,7 @@ heartbeat-seconds: 300
 discovery-refresh-seconds: 900
 ```
 
-The selector scans a candidate pool and ranks the markets it finds by reported volume, open interest, visible top-level depth, and book rows. Category selection uses `--liquid-scan-pages` as a search-depth knob across matching series, not as an instruction to stop at the first markets with visible rows.
+The selector scans a candidate pool and ranks the markets it finds by reported volume, open interest, visible top-level depth, and book rows. It returns up to the requested count while keeping one market per parent event, so one event ladder does not fill the whole selection. Category selection uses `--liquid-scan-pages` as a search-depth knob across matching series, not as an instruction to stop at the first markets with visible rows.
 
 If rows are sparse, lower category restrictions or use a broader selector. If rate limits appear, reduce selected markets or increase `--interval`.
 
