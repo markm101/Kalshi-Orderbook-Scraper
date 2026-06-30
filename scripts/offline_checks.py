@@ -12,7 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from kalshi_capture.config import read_env_file
 from kalshi_capture.discovery import DiscoveryResult, MarketMetadata, SeriesMetadata
 from kalshi_capture.gaps import GapLogger
-from kalshi_capture.orderbook import derive_bid_ask_rows, extract_orderbook_tickers, flatten_orderbook_payload
+from kalshi_capture.orderbook import extract_orderbook_tickers, flatten_orderbook_payload
 from kalshi_capture.selector import market_passes_filters, score_orderbook_payload, select_liquid_tickers
 from kalshi_capture.spread_depth import build_report, write_report
 from kalshi_capture.storage import write_metadata, write_orderbook_rows
@@ -92,7 +92,7 @@ def check_storage_writes() -> None:
             }
         ]
     }
-    rows = derive_bid_ask_rows(flatten_orderbook_payload(payload, 1782432000000))
+    rows = flatten_orderbook_payload(payload, 1782432000000)
     write_orderbook_rows(output_dir, rows, discovery.ticker_categories)
 
     assert (output_dir / "metadata" / "markets.csv").exists()
@@ -100,9 +100,8 @@ def check_storage_writes() -> None:
     orderbook_path = output_dir / "orderbooks" / "T1.csv"
     assert orderbook_path.exists()
     text = orderbook_path.read_text()
-    assert "capture_ts_ms,snapshot_id,ticker,outcome,book_side,level,price,size" in text
-    assert "1782432000000,1782432000000:T1,T1,yes,bid,0,1500,10000" in text
-    assert "1782432000000,1782432000000:T1,T1,no,ask,0,8500,10000" in text
+    assert "capture_ts_ms,ticker,side,level,price,size,snapshot_id" in text
+    assert "1782432000000,T1,yes,0,1500,10000,1782432000000:T1" in text
 
 
 def check_gap_logger() -> None:
@@ -162,22 +161,22 @@ def check_capture_inspector() -> None:
             }
         ]
     }
-    rows = derive_bid_ask_rows(flatten_orderbook_payload(payload, 1782432000000))
+    rows = flatten_orderbook_payload(payload, 1782432000000)
     write_orderbook_rows(output_dir, rows, discovery.ticker_categories)
     gap_logger = GapLogger(output_dir)
     gap_logger.log("startup", "test")
-    (output_dir / "run_summary.json").write_text(json.dumps({"rows": 2, "zero_row_batches": 0}) + "\n")
+    (output_dir / "run_summary.json").write_text(json.dumps({"rows": 1, "zero_row_batches": 0}) + "\n")
 
     summary = inspect_capture(output_dir)
     assert summary.orderbook_files == 1
-    assert summary.orderbook_rows == 2
+    assert summary.orderbook_rows == 1
     assert summary.tickers == {"T1"}
     assert summary.categories == {"Sports"}
     assert summary.dates == {"2026-06-26"}
     assert len(summary.snapshots) == 1
-    assert summary.total_size == 20000
-    assert summary.total_top_level_size == 20000
-    assert summary.run_summary["rows"] == 2
+    assert summary.total_size == 10000
+    assert summary.total_top_level_size == 10000
+    assert summary.run_summary["rows"] == 1
     assert summary.run_summary["zero_row_batches"] == 0
     assert summary.gap_events["startup"] == 1
 
@@ -428,8 +427,8 @@ def check_liquid_selector_diversifies_events() -> None:
 
 
 def check_spread_depth_report() -> None:
-    derived_dir = Path(tempfile.mkdtemp())
-    metadata_dir = derived_dir / "metadata"
+    output_dir = Path(tempfile.mkdtemp())
+    metadata_dir = output_dir / "metadata"
     metadata_dir.mkdir(parents=True, exist_ok=True)
     (metadata_dir / "markets.csv").write_text(
         "ticker,event_ticker,series_ticker,market_type,status,title,yes_sub_title,no_sub_title,open_time,close_time,updated_time\n"
@@ -439,7 +438,7 @@ def check_spread_depth_report() -> None:
         "series_ticker,category,sanitized_category,tags,title,frequency,updated_at\n"
         "SERIES,Sports,Sports,,Series,daily,\n"
     )
-    output_path = derived_dir / "orderbooks" / "T1.csv"
+    output_path = output_dir / "orderbooks" / "T1.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
         "capture_ts_ms,snapshot_id,ticker,outcome,book_side,level,price,size\n"
@@ -451,7 +450,7 @@ def check_spread_depth_report() -> None:
         "1782432000000,1782432000000:T1,T1,no,ask,0,6000,100\n"
     )
 
-    rows = build_report(derived_dir, outcomes=("yes",))
+    rows = build_report(output_dir, outcomes=("yes",))
     assert len(rows) == 1
     row = rows[0]
     assert row.category == "Sports"
@@ -469,7 +468,31 @@ def check_spread_depth_report() -> None:
     assert row.avg_total_bid_size == "150.00"
     assert row.avg_total_ask_size == "100.00"
 
-    report_path = derived_dir / "spread_depth.csv"
+    raw_output_dir = Path(tempfile.mkdtemp())
+    raw_metadata_dir = raw_output_dir / "metadata"
+    raw_metadata_dir.mkdir(parents=True, exist_ok=True)
+    (raw_metadata_dir / "markets.csv").write_text(
+        "ticker,event_ticker,series_ticker,market_type,status,title,yes_sub_title,no_sub_title,open_time,close_time,updated_time\n"
+        "T1,SERIES-TEST,SERIES,binary,active,,,,'','',''\n"
+    )
+    (raw_metadata_dir / "series.csv").write_text(
+        "series_ticker,category,sanitized_category,tags,title,frequency,updated_at\n"
+        "SERIES,Sports,Sports,,Series,daily,\n"
+    )
+    raw_path = raw_output_dir / "orderbooks" / "T1.csv"
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
+    raw_path.write_text(
+        "capture_ts_ms,ticker,side,level,price,size,snapshot_id\n"
+        "1782432000000,T1,yes,0,4000,100,1782432000000:T1\n"
+        "1782432000000,T1,no,0,5500,25,1782432000000:T1\n"
+    )
+    raw_rows = build_report(raw_output_dir, outcomes=("yes",))
+    assert len(raw_rows) == 1
+    assert raw_rows[0].min_spread == 500
+    assert raw_rows[0].avg_top_bid_size == "100.00"
+    assert raw_rows[0].avg_top_ask_size == "25.00"
+
+    report_path = output_dir / "spread_depth.csv"
     write_report(rows, report_path)
     assert "avg_spread" in report_path.read_text()
 

@@ -72,18 +72,50 @@ def build_report(
         with path.open(newline="") as csv_file:
             reader = csv.DictReader(csv_file)
             for row in reader:
-                ticker = row.get("ticker", "")
-                outcome = row.get("outcome", "")
-                category = ticker_categories.get(ticker, "Unknown")
-                if category_filter and category not in category_filter:
-                    continue
-                if ticker_filter and ticker not in ticker_filter:
-                    continue
-                if outcome_filter and outcome not in outcome_filter:
-                    continue
-                _add_row(books, category, row)
+                for report_row in _report_input_rows(row):
+                    ticker = report_row.get("ticker", "")
+                    outcome = report_row.get("outcome", "")
+                    category = ticker_categories.get(ticker, "Unknown")
+                    if category_filter and category not in category_filter:
+                        continue
+                    if ticker_filter and ticker not in ticker_filter:
+                        continue
+                    if outcome_filter and outcome not in outcome_filter:
+                        continue
+                    _add_row(books, category, report_row)
 
     return tuple(_summarize_books(books))
+
+
+def _report_input_rows(row: dict[str, str]) -> tuple[dict[str, str], ...]:
+    if row.get("outcome") and row.get("book_side"):
+        return (row,)
+    if row.get("side") == "yes":
+        ask_row = dict(row)
+        ask_row["outcome"] = "no"
+        ask_row["book_side"] = "ask"
+        ask_row["price"] = _complement_price(row.get("price", ""))
+        bid_row = dict(row)
+        bid_row["outcome"] = "yes"
+        bid_row["book_side"] = "bid"
+        return (bid_row, ask_row)
+    if row.get("side") == "no":
+        bid_row = dict(row)
+        bid_row["outcome"] = "no"
+        bid_row["book_side"] = "bid"
+        ask_row = dict(row)
+        ask_row["outcome"] = "yes"
+        ask_row["book_side"] = "ask"
+        ask_row["price"] = _complement_price(row.get("price", ""))
+        return (bid_row, ask_row)
+    return ()
+
+
+def _complement_price(value: str) -> str:
+    try:
+        return str(10000 - int(value))
+    except ValueError:
+        return ""
 
 
 def write_report(rows: tuple[ReportRow, ...], output_path: Path) -> None:

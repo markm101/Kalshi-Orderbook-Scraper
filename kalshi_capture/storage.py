@@ -5,7 +5,7 @@ from dataclasses import asdict, fields
 from pathlib import Path
 
 from kalshi_capture.discovery import DiscoveryResult, MarketMetadata, SeriesMetadata
-from kalshi_capture.orderbook import BidAskRow
+from kalshi_capture.orderbook import OrderBookRow
 
 
 def write_metadata(output_dir: Path, discovery: DiscoveryResult) -> None:
@@ -17,16 +17,16 @@ def write_metadata(output_dir: Path, discovery: DiscoveryResult) -> None:
 
 def write_orderbook_rows(
     output_dir: Path,
-    rows: tuple[BidAskRow, ...],
+    rows: tuple[OrderBookRow, ...],
     ticker_categories: dict[str, str],
 ) -> None:
-    rows_by_path: dict[Path, list[BidAskRow]] = {}
+    rows_by_path: dict[Path, list[OrderBookRow]] = {}
     for row in rows:
         path = output_dir / "orderbooks" / f"{row.ticker}.csv"
         rows_by_path.setdefault(path, []).append(row)
 
     for path, path_rows in rows_by_path.items():
-        _append_dataclass_csv(path, tuple(path_rows), BidAskRow)
+        _append_dataclass_csv(path, tuple(path_rows), OrderBookRow)
 
 
 def _write_dataclass_csv(path: Path, rows: tuple[object, ...], row_type: type[object]) -> None:

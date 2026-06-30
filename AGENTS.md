@@ -20,7 +20,7 @@ Out of scope:
 
 ## Current Implementation
 
-V1 is complete and publishable as a read-only REST polling capture tool. The project now has auth, discovery, liquid selection, bid/ask capture output, metadata, gap logging, run summaries, spread/depth reporting, and a v1 runbook.
+V1 is complete and publishable as a read-only REST polling capture tool. The project now has auth, discovery, liquid selection, raw YES/NO bid capture output, metadata, gap logging, run summaries, spread/depth reporting, and a v1 runbook.
 
 Post-v1 work should focus on longer capture validation, optional WebSocket capture if REST polling is insufficient, and analysis helpers such as slippage reporting. Do not add trading behavior.
 
@@ -76,9 +76,9 @@ Implemented behavior:
 - graceful SIGINT/SIGTERM handling
 - `--once` one-cycle capture
 - `--duration-seconds` timed capture
-- bid/ask CSV capture output
-- old raw-to-bid/ask migration helper
-- spread/depth reporting for bid/ask output
+- raw YES/NO bid CSV capture output
+- optional raw-to-bid/ask conversion helper
+- spread/depth reporting derived from raw bid output
 - v1 runbook with recommended workflow, long-run notes, and troubleshooting
 - standard-library inspection and offline checks
 
@@ -162,9 +162,9 @@ Batch shape:
 }
 ```
 
-## Internal Raw Data Schema
+## Default Raw Data Schema
 
-Kalshi REST returns bid-only books. Internally, `OrderBookRow` represents raw bid rows before capture writes the default bid/ask CSV output:
+Kalshi REST returns bid-only books. Capture writes `OrderBookRow` rows directly:
 
 ```text
 capture_ts_ms,ticker,side,level,price,size,snapshot_id
@@ -193,9 +193,9 @@ price=1500,size=10000
 
 Use `Decimal`, never binary float arithmetic.
 
-## Default Bid/Ask Schema
+## Derived Bid/Ask Schema
 
-Captured orderbook CSV rows:
+`scripts/derive_bid_ask.py` can convert raw rows to this bid/ask schema when needed:
 
 ```text
 capture_ts_ms,snapshot_id,ticker,outcome,book_side,level,price,size
@@ -208,7 +208,7 @@ YES bid -> YES bid and NO ask at 10000 - price
 NO bid  -> NO bid and YES ask at 10000 - price
 ```
 
-Capture writes this bid/ask schema by default. `scripts/derive_bid_ask.py` is only a migration helper for older raw bid-only captures.
+Capture does not write this schema by default. Spread/depth reporting derives the equivalent bid/ask view in memory from raw rows.
 
 ## Output Layout
 

@@ -54,7 +54,7 @@ The current release is suitable for:
 - authenticated read-only market data capture
 - one-shot and timed order book snapshots
 - liquid-market discovery for capture setup
-- bid/ask CSV dataset accumulation by ticker
+- raw YES/NO bid CSV dataset accumulation by ticker
 - spread/depth reporting for backtesting realism checks
 
 Still out of scope for v1:
@@ -82,7 +82,7 @@ Implemented:
 - local ignored `exports/` directory for reviewing test CSVs
 - offline validation script
 - capture inspection script
-- bid/ask CSV capture output
+- raw YES/NO bid CSV capture output
 - spread/depth reporting script
 - v1 runbook for short and long captures
 
@@ -275,22 +275,21 @@ Each ticker gets its own CSV under `orderbooks/`. Category is stored in `metadat
 
 ## Order Book CSV
 
-Order book CSVs store a bid/ask view for both binary outcomes.
+Order book CSVs store the raw YES and NO bid books returned by Kalshi.
 
 ```text
-capture_ts_ms,snapshot_id,ticker,outcome,book_side,level,price,size
+capture_ts_ms,ticker,side,level,price,size,snapshot_id
 ```
 
 Columns:
 
 - `capture_ts_ms`: local capture timestamp in milliseconds since epoch
-- `snapshot_id`: grouping key for one ticker's captured book at one timestamp
 - `ticker`: Kalshi market ticker
-- `outcome`: `yes` or `no`
-- `book_side`: `bid` or `ask`
-- `level`: depth level, where `0` is best for that outcome and side
+- `side`: `yes` or `no`, meaning Kalshi bid side
+- `level`: depth level, where `0` is best bid for that side
 - `price`: fixed units where `10000` equals `$1.0000`
 - `size`: fixed count units where `100` equals `1` contract
+- `snapshot_id`: grouping key for one ticker's captured book at one timestamp
 
 Price examples:
 
@@ -308,7 +307,7 @@ Size examples:
 18914 = 189.14 contracts
 ```
 
-Kalshi REST order books return YES bids and NO bids only. Capture output derives explicit asks because, in binary markets, the opposite side implies asks.
+Kalshi REST order books return YES bids and NO bids only. The capture output stores those raw bid rows directly. Analysis helpers derive explicit asks when needed because, in binary markets, the opposite side implies asks.
 
 Example:
 
@@ -322,7 +321,7 @@ because:
 10000 - 9370 = 630
 ```
 
-Derivation rules:
+Analysis derivation rules:
 
 ```text
 YES bid -> YES bid and NO ask at 10000 - price
@@ -331,7 +330,7 @@ NO bid  -> NO bid and YES ask at 10000 - price
 
 ## Spread And Depth Report
 
-Each capture writes `spread_depth.csv` at shutdown. Regenerate or filter it manually with:
+Each capture writes `spread_depth.csv` at shutdown. The report derives implied asks in memory from the raw YES/NO bid rows. Regenerate or filter it manually with:
 
 ```bash
 python scripts/spread_depth_report.py \
@@ -386,7 +385,7 @@ python scripts/offline_checks.py
 - `kalshi_capture/capture.py`: capture loop
 - `kalshi_capture/storage.py`: CSV writers
 - `scripts/inspect_capture.py`: local output inspection
-- `scripts/derive_bid_ask.py`: migration helper for older raw bid-only captures
+- `scripts/derive_bid_ask.py`: optional raw-to-bid/ask conversion
 - `scripts/spread_depth_report.py`: bid/ask spread and depth reporting
 - `docs/v1_runbook.md`: recommended v1 workflow, long-run notes, and troubleshooting
 - `AGENTS.md`: implementation context for coding agents
