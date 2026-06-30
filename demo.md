@@ -72,6 +72,20 @@ Review the automatic spread/depth report created by capture.
 python scripts/spread_depth_report.py exports/demo_short_capture --limit 20
 ```
 
+Review the latest captured spread for each ticker.
+
+```bash
+python scripts/latest_spread_report.py exports/demo_short_capture --limit 20
+```
+
+Regenerate the latest-spread report CSV manually.
+
+```bash
+python scripts/latest_spread_report.py \
+  exports/demo_short_capture \
+  --output-csv exports/demo_short_capture/latest_spread.csv
+```
+
 Regenerate the spread/depth report CSV manually.
 
 ```bash

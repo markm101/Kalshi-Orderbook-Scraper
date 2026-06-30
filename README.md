@@ -15,7 +15,7 @@ It collects:
 - series/category metadata
 - gap logs
 - run summaries
-- automatic `spread_depth.csv` summaries
+- automatic `latest_spread.csv` and `spread_depth.csv` summaries
 
 It does not:
 
@@ -84,6 +84,7 @@ Implemented:
 - capture inspection script
 - raw YES/NO bid CSV capture output
 - spread/depth reporting script
+- latest-spread reporting script
 - v1 runbook for short and long captures
 
 ## Install
@@ -268,6 +269,7 @@ exports/short_capture/
     series.csv
   gaps.csv
   run_summary.json
+  latest_spread.csv
   spread_depth.csv
 ```
 
@@ -330,6 +332,20 @@ NO bid  -> NO bid and YES ask at 10000 - price
 
 ## Spread And Depth Report
 
+Each capture updates `latest_spread.csv` after every polling cycle. This is the newest captured snapshot per ticker, with derived YES/NO bid, ask, and spread fields:
+
+```bash
+python scripts/latest_spread_report.py exports/short_capture --limit 20
+```
+
+Write or regenerate the CSV manually with:
+
+```bash
+python scripts/latest_spread_report.py \
+  exports/short_capture \
+  --output-csv exports/short_capture/latest_spread.csv
+```
+
 Each capture writes `spread_depth.csv` at shutdown. The report derives implied asks in memory from the raw YES/NO bid rows. Regenerate or filter it manually with:
 
 ```bash
@@ -386,6 +402,7 @@ python scripts/offline_checks.py
 - `kalshi_capture/storage.py`: CSV writers
 - `scripts/inspect_capture.py`: local output inspection
 - `scripts/derive_bid_ask.py`: optional raw-to-bid/ask conversion
+- `scripts/latest_spread_report.py`: latest per-ticker spread reporting
 - `scripts/spread_depth_report.py`: bid/ask spread and depth reporting
 - `docs/v1_runbook.md`: recommended v1 workflow, long-run notes, and troubleshooting
 - `AGENTS.md`: implementation context for coding agents

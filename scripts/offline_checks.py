@@ -14,7 +14,7 @@ from kalshi_capture.discovery import DiscoveryResult, MarketMetadata, SeriesMeta
 from kalshi_capture.gaps import GapLogger
 from kalshi_capture.orderbook import extract_orderbook_tickers, flatten_orderbook_payload
 from kalshi_capture.selector import market_passes_filters, score_orderbook_payload, select_liquid_tickers
-from kalshi_capture.spread_depth import build_report, write_report
+from kalshi_capture.spread_depth import build_latest_report, build_report, write_latest_report, write_report
 from kalshi_capture.storage import write_metadata, write_orderbook_rows
 from scripts.derive_bid_ask import derive_capture, derive_rows
 from scripts.inspect_capture import inspect_capture
@@ -33,6 +33,7 @@ def main() -> None:
     check_liquid_selector_ranks_beyond_first_match()
     check_liquid_selector_diversifies_events()
     check_spread_depth_report()
+    check_latest_spread_report()
     print("offline checks passed")
 
 
@@ -495,6 +496,51 @@ def check_spread_depth_report() -> None:
     report_path = output_dir / "spread_depth.csv"
     write_report(rows, report_path)
     assert "avg_spread" in report_path.read_text()
+
+
+def check_latest_spread_report() -> None:
+    output_dir = Path(tempfile.mkdtemp())
+    metadata_dir = output_dir / "metadata"
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    (metadata_dir / "markets.csv").write_text(
+        "ticker,event_ticker,series_ticker,market_type,status,title,yes_sub_title,no_sub_title,open_time,close_time,updated_time\n"
+        "T1,SERIES-TEST,SERIES,binary,active,,,,'','',''\n"
+        "T2,SERIES-TEST,SERIES,binary,active,,,,'','',''\n"
+    )
+    (metadata_dir / "series.csv").write_text(
+        "series_ticker,category,sanitized_category,tags,title,frequency,updated_at\n"
+        "SERIES,Sports,Sports,,Series,daily,\n"
+    )
+    orderbook_dir = output_dir / "orderbooks"
+    orderbook_dir.mkdir(parents=True, exist_ok=True)
+    (orderbook_dir / "T1.csv").write_text(
+        "capture_ts_ms,ticker,side,level,price,size,snapshot_id\n"
+        "1782432000000,T1,yes,0,4000,100,1782432000000:T1\n"
+        "1782432000000,T1,no,0,5500,25,1782432000000:T1\n"
+        "1782432001000,T1,yes,0,4100,200,1782432001000:T1\n"
+        "1782432001000,T1,no,0,5600,75,1782432001000:T1\n"
+    )
+    (orderbook_dir / "T2.csv").write_text(
+        "capture_ts_ms,ticker,side,level,price,size,snapshot_id\n"
+        "1782432000000,T2,no,0,8000,100,1782432000000:T2\n"
+    )
+
+    rows = build_latest_report(output_dir)
+    by_ticker = {row.ticker: row for row in rows}
+    assert by_ticker["T1"].book_state == "spread_available"
+    assert by_ticker["T1"].capture_ts_ms == 1782432001000
+    assert by_ticker["T1"].yes_best_bid == 4100
+    assert by_ticker["T1"].yes_best_ask == 4400
+    assert by_ticker["T1"].yes_spread == 300
+    assert by_ticker["T1"].no_best_bid == 5600
+    assert by_ticker["T1"].no_best_ask == 5900
+    assert by_ticker["T1"].no_spread == 300
+    assert by_ticker["T2"].book_state == "one_sided"
+    assert by_ticker["T2"].yes_spread is None
+
+    report_path = output_dir / "latest_spread.csv"
+    write_latest_report(rows, report_path)
+    assert "book_state" in report_path.read_text()
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ from kalshi_capture.discovery import DiscoveryResult, discover_markets
 from kalshi_capture.gaps import GapLogger
 from kalshi_capture.orderbook import fetch_orderbook_batch
 from kalshi_capture.selector import select_liquid_tickers
-from kalshi_capture.spread_depth import build_report, write_report
+from kalshi_capture.spread_depth import build_latest_report, build_report, write_latest_report, write_report
 from kalshi_capture.storage import write_metadata, write_orderbook_rows
 
 
@@ -54,6 +54,7 @@ def run_capture(
 
         if config.once:
             _capture_cycle(config, client, discovery, gap_logger, stats)
+            _write_latest_spread_report(config, gap_logger)
             return
 
         next_discovery_refresh = time.monotonic() + config.discovery_refresh_seconds
@@ -68,6 +69,7 @@ def run_capture(
                 next_discovery_refresh = time.monotonic() + config.discovery_refresh_seconds
 
             _capture_cycle(config, client, discovery, gap_logger, stats)
+            _write_latest_spread_report(config, gap_logger)
 
             if time.monotonic() >= next_heartbeat:
                 _log_heartbeat(discovery, stats)
@@ -79,6 +81,7 @@ def run_capture(
         stats.ended_ts_ms = int(time.time() * 1000)
         _write_run_summary(config, stats)
         _write_spread_depth_report(config, gap_logger)
+        _write_latest_spread_report(config, gap_logger)
         gap_logger.log("shutdown", "capture stopped")
 
 
@@ -211,6 +214,17 @@ def _write_spread_depth_report(config: Config, gap_logger: GapLogger) -> None:
     except Exception as exc:
         gap_logger.log("spread_depth_error", str(exc))
         logging.exception("spread/depth report failed")
+
+
+def _write_latest_spread_report(config: Config, gap_logger: GapLogger) -> None:
+    try:
+        rows = build_latest_report(config.output_dir)
+        output_path = config.output_dir / "latest_spread.csv"
+        write_latest_report(rows, output_path)
+        logging.info("wrote latest spread report rows=%s path=%s", len(rows), output_path)
+    except Exception as exc:
+        gap_logger.log("latest_spread_error", str(exc))
+        logging.exception("latest spread report failed")
 
 
 def _duration_elapsed(stop_at: float | None) -> bool:

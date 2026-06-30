@@ -92,7 +92,23 @@ Inspect it:
 python scripts/inspect_capture.py exports/v1_short_capture
 ```
 
-Capture writes `spread_depth.csv` automatically at shutdown. To regenerate it manually:
+Capture updates `latest_spread.csv` after every polling cycle and writes `spread_depth.csv` automatically at shutdown.
+
+Use `latest_spread.csv` while a run is active to inspect the newest captured spread per ticker:
+
+```bash
+python scripts/latest_spread_report.py exports/v1_short_capture --limit 20
+```
+
+To regenerate it manually:
+
+```bash
+python scripts/latest_spread_report.py \
+  exports/v1_short_capture \
+  --output-csv exports/v1_short_capture/latest_spread.csv
+```
+
+Use `spread_depth.csv` for historical summary stats across all captured snapshots. To regenerate it manually:
 
 ```bash
 python scripts/spread_depth_report.py \

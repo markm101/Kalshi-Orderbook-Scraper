@@ -23,6 +23,24 @@ REPORT_COLUMNS = (
     "avg_total_ask_size",
 )
 
+LATEST_REPORT_COLUMNS = (
+    "category",
+    "ticker",
+    "capture_ts_ms",
+    "snapshot_id",
+    "book_state",
+    "yes_best_bid",
+    "yes_best_ask",
+    "yes_spread",
+    "yes_top_bid_size",
+    "yes_top_ask_size",
+    "no_best_bid",
+    "no_best_ask",
+    "no_spread",
+    "no_top_bid_size",
+    "no_top_ask_size",
+)
+
 
 @dataclass
 class SnapshotBook:
@@ -30,6 +48,7 @@ class SnapshotBook:
     ticker: str
     outcome: str
     snapshot_id: str
+    capture_ts_ms: int = 0
     best_bid: int | None = None
     best_ask: int | None = None
     top_bid_size: int = 0
@@ -54,6 +73,25 @@ class ReportRow:
     avg_top_ask_size: str
     avg_total_bid_size: str
     avg_total_ask_size: str
+
+
+@dataclass
+class LatestSpreadRow:
+    category: str
+    ticker: str
+    capture_ts_ms: int
+    snapshot_id: str
+    book_state: str
+    yes_best_bid: int | None
+    yes_best_ask: int | None
+    yes_spread: int | None
+    yes_top_bid_size: int
+    yes_top_ask_size: int
+    no_best_bid: int | None
+    no_best_ask: int | None
+    no_spread: int | None
+    no_top_bid_size: int
+    no_top_ask_size: int
 
 
 def build_report(
@@ -85,6 +123,32 @@ def build_report(
                     _add_row(books, category, report_row)
 
     return tuple(_summarize_books(books))
+
+
+def build_latest_report(
+    output_dir: Path,
+    tickers: tuple[str, ...] = (),
+    categories: tuple[str, ...] = (),
+) -> tuple[LatestSpreadRow, ...]:
+    ticker_filter = set(tickers)
+    category_filter = set(categories)
+    books: dict[tuple[str, str, str, str], SnapshotBook] = {}
+    ticker_categories = _load_ticker_categories(output_dir)
+
+    for path in sorted((output_dir / "orderbooks").glob("*.csv")):
+        with path.open(newline="") as csv_file:
+            reader = csv.DictReader(csv_file)
+            for row in reader:
+                for report_row in _report_input_rows(row):
+                    ticker = report_row.get("ticker", "")
+                    category = ticker_categories.get(ticker, "Unknown")
+                    if category_filter and category not in category_filter:
+                        continue
+                    if ticker_filter and ticker not in ticker_filter:
+                        continue
+                    _add_row(books, category, report_row)
+
+    return tuple(_summarize_latest_books(books))
 
 
 def _report_input_rows(row: dict[str, str]) -> tuple[dict[str, str], ...]:
@@ -127,6 +191,15 @@ def write_report(rows: tuple[ReportRow, ...], output_path: Path) -> None:
             writer.writerow(row.__dict__)
 
 
+def write_latest_report(rows: tuple[LatestSpreadRow, ...], output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=LATEST_REPORT_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row.__dict__)
+
+
 def _add_row(books: dict[tuple[str, str, str, str], SnapshotBook], category: str, row: dict[str, str]) -> None:
     try:
         level = int(row.get("level", ""))
@@ -139,11 +212,13 @@ def _add_row(books: dict[tuple[str, str, str, str], SnapshotBook], category: str
     outcome = row.get("outcome", "")
     book_side = row.get("book_side", "")
     snapshot_id = row.get("snapshot_id") or f"{row.get('capture_ts_ms', '')}:{ticker}"
+    capture_ts_ms = _parse_capture_ts_ms(row.get("capture_ts_ms", ""), snapshot_id)
     if not ticker or outcome not in {"yes", "no"} or book_side not in {"bid", "ask"}:
         return
 
     key = (category, ticker, outcome, snapshot_id)
     book = books.setdefault(key, SnapshotBook(category, ticker, outcome, snapshot_id))
+    book.capture_ts_ms = max(book.capture_ts_ms, capture_ts_ms)
     if book_side == "bid":
         book.total_bid_size += size
         if book.best_bid is None or price > book.best_bid:
@@ -187,6 +262,75 @@ def _summarize_books(books: dict[tuple[str, str, str, str], SnapshotBook]) -> li
         )
 
     return sorted(rows, key=_report_sort_key)
+
+
+def _summarize_latest_books(books: dict[tuple[str, str, str, str], SnapshotBook]) -> list[LatestSpreadRow]:
+    grouped: dict[tuple[str, str, str], dict[str, SnapshotBook]] = {}
+    for book in books.values():
+        grouped.setdefault((book.category, book.ticker, book.snapshot_id), {})[book.outcome] = book
+
+    latest_by_ticker: dict[tuple[str, str], tuple[int, str, dict[str, SnapshotBook]]] = {}
+    for (category, ticker, snapshot_id), outcome_books in grouped.items():
+        capture_ts_ms = max((book.capture_ts_ms for book in outcome_books.values()), default=0)
+        key = (category, ticker)
+        current = latest_by_ticker.get(key)
+        if current is None or (capture_ts_ms, snapshot_id) > (current[0], current[1]):
+            latest_by_ticker[key] = (capture_ts_ms, snapshot_id, outcome_books)
+
+    rows: list[LatestSpreadRow] = []
+    for (category, ticker), (capture_ts_ms, snapshot_id, outcome_books) in latest_by_ticker.items():
+        yes = outcome_books.get("yes")
+        no = outcome_books.get("no")
+        yes_bid = yes.best_bid if yes else None
+        yes_ask = yes.best_ask if yes else None
+        no_bid = no.best_bid if no else None
+        no_ask = no.best_ask if no else None
+        yes_spread = yes_ask - yes_bid if yes_bid is not None and yes_ask is not None else None
+        no_spread = no_ask - no_bid if no_bid is not None and no_ask is not None else None
+        rows.append(
+            LatestSpreadRow(
+                category=category,
+                ticker=ticker,
+                capture_ts_ms=capture_ts_ms,
+                snapshot_id=snapshot_id,
+                book_state=_book_state(yes_bid, yes_ask, no_bid, no_ask),
+                yes_best_bid=yes_bid,
+                yes_best_ask=yes_ask,
+                yes_spread=yes_spread,
+                yes_top_bid_size=yes.top_bid_size if yes else 0,
+                yes_top_ask_size=yes.top_ask_size if yes else 0,
+                no_best_bid=no_bid,
+                no_best_ask=no_ask,
+                no_spread=no_spread,
+                no_top_bid_size=no.top_bid_size if no else 0,
+                no_top_ask_size=no.top_ask_size if no else 0,
+            )
+        )
+
+    return sorted(rows, key=lambda row: (row.category, row.ticker))
+
+
+def _book_state(
+    yes_bid: int | None,
+    yes_ask: int | None,
+    no_bid: int | None,
+    no_ask: int | None,
+) -> str:
+    if yes_bid is not None and yes_ask is not None and no_bid is not None and no_ask is not None:
+        return "spread_available"
+    if yes_bid is not None or no_bid is not None:
+        return "one_sided"
+    return "empty"
+
+
+def _parse_capture_ts_ms(value: str, snapshot_id: str) -> int:
+    candidates = (value, snapshot_id.split(":", 1)[0])
+    for candidate in candidates:
+        try:
+            return int(candidate)
+        except ValueError:
+            continue
+    return 0
 
 
 def _report_sort_key(row: ReportRow) -> tuple[int, Decimal, str, str]:

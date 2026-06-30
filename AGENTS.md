@@ -49,6 +49,7 @@ scripts/offline_checks.py
 scripts/inspect_capture.py
 scripts/derive_bid_ask.py
 scripts/spread_depth_report.py
+scripts/latest_spread_report.py
 ```
 
 Docs:
@@ -72,6 +73,7 @@ Implemented behavior:
 - gap logging
 - run summary JSON
 - automatic spread/depth CSV summaries
+- latest-spread CSV refreshed after each capture cycle
 - heartbeat logs
 - graceful SIGINT/SIGTERM handling
 - `--once` one-cycle capture
@@ -223,6 +225,7 @@ Capture output:
     series.csv
   gaps.csv
   run_summary.json
+  latest_spread.csv
   spread_depth.csv
 ```
 
