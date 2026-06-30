@@ -15,6 +15,7 @@ It collects:
 - series/category metadata
 - gap logs
 - run summaries
+- automatic `spread_depth.csv` summaries
 
 It does not:
 
@@ -267,6 +268,7 @@ exports/short_capture/
     series.csv
   gaps.csv
   run_summary.json
+  spread_depth.csv
 ```
 
 Each ticker gets its own CSV under `orderbooks/`. Category is stored in `metadata/series.csv`, not in every order book row.
@@ -329,7 +331,7 @@ NO bid  -> NO bid and YES ask at 10000 - price
 
 ## Spread And Depth Report
 
-Summarize tradability by ticker and outcome:
+Each capture writes `spread_depth.csv` at shutdown. Regenerate or filter it manually with:
 
 ```bash
 python scripts/spread_depth_report.py \

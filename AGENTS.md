@@ -38,6 +38,7 @@ kalshi_capture/
   main.py
   orderbook.py
   selector.py
+  spread_depth.py
   storage.py
 ```
 
@@ -70,6 +71,7 @@ Implemented behavior:
 - metadata CSVs
 - gap logging
 - run summary JSON
+- automatic spread/depth CSV summaries
 - heartbeat logs
 - graceful SIGINT/SIGTERM handling
 - `--once` one-cycle capture
@@ -221,6 +223,7 @@ Capture output:
     series.csv
   gaps.csv
   run_summary.json
+  spread_depth.csv
 ```
 
 Use `capture_ts_ms` for UTC dates in analysis scripts. Category is stored in metadata, not in the orderbook file path.

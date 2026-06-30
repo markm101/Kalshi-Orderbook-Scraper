@@ -14,6 +14,7 @@ from kalshi_capture.discovery import DiscoveryResult, discover_markets
 from kalshi_capture.gaps import GapLogger
 from kalshi_capture.orderbook import derive_bid_ask_rows, fetch_orderbook_batch
 from kalshi_capture.selector import select_liquid_tickers
+from kalshi_capture.spread_depth import build_report, write_report
 from kalshi_capture.storage import write_metadata, write_orderbook_rows
 
 
@@ -77,6 +78,7 @@ def run_capture(
     finally:
         stats.ended_ts_ms = int(time.time() * 1000)
         _write_run_summary(config, stats)
+        _write_spread_depth_report(config, gap_logger)
         gap_logger.log("shutdown", "capture stopped")
 
 
@@ -199,6 +201,17 @@ def _write_run_summary(config: Config, stats: CaptureStats) -> None:
     summary["interval"] = config.interval
     summary["max_levels"] = config.max_levels
     output_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+
+
+def _write_spread_depth_report(config: Config, gap_logger: GapLogger) -> None:
+    try:
+        rows = build_report(config.output_dir)
+        output_path = config.output_dir / "spread_depth.csv"
+        write_report(rows, output_path)
+        logging.info("wrote spread/depth report rows=%s path=%s", len(rows), output_path)
+    except Exception as exc:
+        gap_logger.log("spread_depth_error", str(exc))
+        logging.exception("spread/depth report failed")
 
 
 def _duration_elapsed(stop_at: float | None) -> bool:

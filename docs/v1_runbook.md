@@ -92,7 +92,7 @@ Inspect it:
 python scripts/inspect_capture.py exports/v1_short_capture
 ```
 
-Report spread/depth metrics:
+Capture writes `spread_depth.csv` automatically at shutdown. To regenerate it manually:
 
 ```bash
 python scripts/spread_depth_report.py \
@@ -102,7 +102,7 @@ python scripts/spread_depth_report.py \
 
 ## Longer Capture
 
-Use a unique output directory per longer run. Do not reuse the same output directory unless you intentionally want files and `run_summary.json` to be updated in place.
+Use a unique output directory per longer run. Do not reuse the same output directory unless you intentionally want files, `run_summary.json`, and `spread_depth.csv` to be updated in place.
 
 Example 2-hour run:
 

@@ -14,10 +14,10 @@ from kalshi_capture.discovery import DiscoveryResult, MarketMetadata, SeriesMeta
 from kalshi_capture.gaps import GapLogger
 from kalshi_capture.orderbook import derive_bid_ask_rows, extract_orderbook_tickers, flatten_orderbook_payload
 from kalshi_capture.selector import market_passes_filters, score_orderbook_payload, select_liquid_tickers
+from kalshi_capture.spread_depth import build_report, write_report
 from kalshi_capture.storage import write_metadata, write_orderbook_rows
 from scripts.derive_bid_ask import derive_capture, derive_rows
 from scripts.inspect_capture import inspect_capture
-from scripts.spread_depth_report import build_report, write_report
 
 
 def main() -> None:
