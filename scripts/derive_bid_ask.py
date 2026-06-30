@@ -2,48 +2,35 @@ from __future__ import annotations
 
 import argparse
 import csv
-from dataclasses import dataclass, asdict
+from dataclasses import asdict
 from pathlib import Path
 import shutil
+import sys
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from kalshi_capture.orderbook import OrderBookRow, derive_bid_ask_rows
 
 
 RAW_COLUMNS = ("capture_ts_ms", "ticker", "side", "level", "price", "size", "snapshot_id")
 DERIVED_COLUMNS = ("capture_ts_ms", "snapshot_id", "ticker", "outcome", "book_side", "level", "price", "size")
-PRICE_SCALE = 10000
 
 
-@dataclass(frozen=True)
-class DerivedRow:
-    capture_ts_ms: int
-    snapshot_id: str
-    ticker: str
-    outcome: str
-    book_side: str
-    level: int
-    price: int
-    size: int
-
-
-def derive_rows(raw_row: dict[str, str]) -> tuple[DerivedRow, ...]:
+def derive_rows(raw_row: dict[str, str]):
     capture_ts_ms = int(raw_row["capture_ts_ms"])
     ticker = raw_row["ticker"]
-    side = raw_row["side"]
-    level = int(raw_row["level"])
-    price = int(raw_row["price"])
-    size = int(raw_row["size"])
-    snapshot_id = raw_row.get("snapshot_id") or f"{capture_ts_ms}:{ticker}"
-
-    if side == "yes":
-        return (
-            DerivedRow(capture_ts_ms, snapshot_id, ticker, "yes", "bid", level, price, size),
-            DerivedRow(capture_ts_ms, snapshot_id, ticker, "no", "ask", level, PRICE_SCALE - price, size),
-        )
-    if side == "no":
-        return (
-            DerivedRow(capture_ts_ms, snapshot_id, ticker, "no", "bid", level, price, size),
-            DerivedRow(capture_ts_ms, snapshot_id, ticker, "yes", "ask", level, PRICE_SCALE - price, size),
-        )
-    raise ValueError(f"Unknown raw side: {side!r}")
+    row = OrderBookRow(
+        capture_ts_ms=capture_ts_ms,
+        ticker=ticker,
+        side=raw_row["side"],
+        level=int(raw_row["level"]),
+        price=int(raw_row["price"]),
+        size=int(raw_row["size"]),
+        snapshot_id=raw_row.get("snapshot_id") or f"{capture_ts_ms}:{ticker}",
+    )
+    return derive_bid_ask_rows((row,))
 
 
 def derive_capture(input_dir: Path, output_dir: Path) -> int:
@@ -70,7 +57,7 @@ def _copy_metadata(input_dir: Path, output_dir: Path) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Create derived bid/ask CSVs from raw Kalshi orderbook captures.")
+    parser = argparse.ArgumentParser(description="Create bid/ask CSVs from older raw Kalshi orderbook captures.")
     parser.add_argument("input_dir", type=Path, help="Raw capture output directory")
     parser.add_argument("output_dir", type=Path, help="Derived output directory")
     return parser

@@ -12,9 +12,8 @@ The tool is read-only. It captures market data only.
 4. Inspect the one-shot output.
 5. Run a short timed capture.
 6. Inspect the short capture.
-7. Create derived bid/ask rows.
-8. Run the spread/depth report.
-9. Start a longer capture only after the short capture writes usable rows.
+7. Run the spread/depth report.
+8. Start a longer capture only after the short capture writes usable rows.
 
 ## Preflight
 
@@ -93,17 +92,11 @@ Inspect it:
 python scripts/inspect_capture.py exports/v1_short_capture
 ```
 
-Create derived bid/ask rows:
-
-```bash
-python scripts/derive_bid_ask.py exports/v1_short_capture exports/v1_short_capture_derived
-```
-
 Report spread/depth metrics:
 
 ```bash
 python scripts/spread_depth_report.py \
-  exports/v1_short_capture_derived \
+  exports/v1_short_capture \
   --output-csv exports/v1_short_capture_spread_depth.csv
 ```
 
@@ -319,7 +312,7 @@ Spread metrics require both bid and ask for the same outcome in the same snapsho
 
 ### Size Units
 
-Raw and derived `size` values are fixed count units where `100 = 1 contract`. This preserves fractional API sizes such as `189.14` contracts as `18914`.
+Captured `size` values are fixed count units where `100 = 1 contract`. This preserves fractional API sizes such as `189.14` contracts as `18914`.
 
 ## V1 Done Criteria
 
@@ -331,8 +324,7 @@ python -m compileall kalshi_capture scripts
 python -m kalshi_capture.main --env prod --dry-run
 python -m kalshi_capture.main --env prod --select-liquid 5 --min-top-level-size 1 --output-dir exports/v1_smoke --once
 python scripts/inspect_capture.py exports/v1_smoke
-python scripts/derive_bid_ask.py exports/v1_smoke exports/v1_smoke_derived
-python scripts/spread_depth_report.py exports/v1_smoke_derived --output-csv exports/v1_smoke_spread_depth.csv
+python scripts/spread_depth_report.py exports/v1_smoke --output-csv exports/v1_smoke_spread_depth.csv
 ```
 
 For final confidence, run a 30- to 120-minute timed capture and inspect the result before relying on the data for backtesting research.

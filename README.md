@@ -53,8 +53,7 @@ The current release is suitable for:
 - authenticated read-only market data capture
 - one-shot and timed order book snapshots
 - liquid-market discovery for capture setup
-- raw CSV dataset accumulation by ticker
-- derived bid/ask exports for analysis
+- bid/ask CSV dataset accumulation by ticker
 - spread/depth reporting for backtesting realism checks
 
 Still out of scope for v1:
@@ -82,7 +81,7 @@ Implemented:
 - local ignored `exports/` directory for reviewing test CSVs
 - offline validation script
 - capture inspection script
-- derived bid/ask export script
+- bid/ask CSV capture output
 - spread/depth reporting script
 - v1 runbook for short and long captures
 
@@ -224,9 +223,8 @@ Recommended sequence:
 3. Run a one-shot selector capture with `--once`.
 4. Inspect it with `scripts/inspect_capture.py`.
 5. Run a short timed capture.
-6. Derive bid/ask rows with `scripts/derive_bid_ask.py`.
-7. Report spread/depth metrics with `scripts/spread_depth_report.py`.
-8. Start longer captures only after the short capture writes usable rows.
+6. Report spread/depth metrics with `scripts/spread_depth_report.py`.
+7. Start longer captures only after the short capture writes usable rows.
 
 Recommended starting defaults:
 
@@ -273,23 +271,24 @@ exports/short_capture/
 
 Each ticker gets its own CSV under `orderbooks/`. Category is stored in `metadata/series.csv`, not in every order book row.
 
-## Raw Order Book CSV
+## Order Book CSV
 
-Raw rows store exactly the bid books Kalshi returns.
+Order book CSVs store a bid/ask view for both binary outcomes.
 
 ```text
-capture_ts_ms,ticker,side,level,price,size,snapshot_id
+capture_ts_ms,snapshot_id,ticker,outcome,book_side,level,price,size
 ```
 
 Columns:
 
 - `capture_ts_ms`: local capture timestamp in milliseconds since epoch
+- `snapshot_id`: grouping key for one ticker's captured book at one timestamp
 - `ticker`: Kalshi market ticker
-- `side`: `yes` or `no` bid side
-- `level`: depth level, where `0` is best bid for that side
+- `outcome`: `yes` or `no`
+- `book_side`: `bid` or `ask`
+- `level`: depth level, where `0` is best for that outcome and side
 - `price`: fixed units where `10000` equals `$1.0000`
 - `size`: fixed count units where `100` equals `1` contract
-- `snapshot_id`: grouping key for one ticker's captured book at one timestamp
 
 Price examples:
 
@@ -307,7 +306,7 @@ Size examples:
 18914 = 189.14 contracts
 ```
 
-Kalshi REST order books return YES bids and NO bids only. They do not return explicit asks. In binary markets, the opposite side implies asks.
+Kalshi REST order books return YES bids and NO bids only. Capture output derives explicit asks because, in binary markets, the opposite side implies asks.
 
 Example:
 
@@ -321,20 +320,6 @@ because:
 10000 - 9370 = 630
 ```
 
-## Derived Bid/Ask CSV
-
-For backtesting, create a derived bid/ask view:
-
-```bash
-python scripts/derive_bid_ask.py exports/short_capture exports/short_capture_derived
-```
-
-Derived rows contain:
-
-```text
-capture_ts_ms,snapshot_id,ticker,outcome,book_side,level,price,size
-```
-
 Derivation rules:
 
 ```text
@@ -344,11 +329,11 @@ NO bid  -> NO bid and YES ask at 10000 - price
 
 ## Spread And Depth Report
 
-After creating derived bid/ask rows, summarize tradability by ticker and outcome:
+Summarize tradability by ticker and outcome:
 
 ```bash
 python scripts/spread_depth_report.py \
-  exports/short_capture_derived \
+  exports/short_capture \
   --output-csv exports/short_capture_spread_depth.csv
 ```
 
@@ -399,7 +384,7 @@ python scripts/offline_checks.py
 - `kalshi_capture/capture.py`: capture loop
 - `kalshi_capture/storage.py`: CSV writers
 - `scripts/inspect_capture.py`: local output inspection
-- `scripts/derive_bid_ask.py`: raw-to-derived bid/ask conversion
-- `scripts/spread_depth_report.py`: derived bid/ask spread and depth reporting
+- `scripts/derive_bid_ask.py`: migration helper for older raw bid-only captures
+- `scripts/spread_depth_report.py`: bid/ask spread and depth reporting
 - `docs/v1_runbook.md`: recommended v1 workflow, long-run notes, and troubleshooting
 - `AGENTS.md`: implementation context for coding agents

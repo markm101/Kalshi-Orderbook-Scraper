@@ -12,7 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from kalshi_capture.config import read_env_file
 from kalshi_capture.discovery import DiscoveryResult, MarketMetadata, SeriesMetadata
 from kalshi_capture.gaps import GapLogger
-from kalshi_capture.orderbook import extract_orderbook_tickers, flatten_orderbook_payload
+from kalshi_capture.orderbook import derive_bid_ask_rows, extract_orderbook_tickers, flatten_orderbook_payload
 from kalshi_capture.selector import market_passes_filters, score_orderbook_payload, select_liquid_tickers
 from kalshi_capture.storage import write_metadata, write_orderbook_rows
 from scripts.derive_bid_ask import derive_capture, derive_rows
@@ -92,14 +92,17 @@ def check_storage_writes() -> None:
             }
         ]
     }
-    rows = flatten_orderbook_payload(payload, 1782432000000)
+    rows = derive_bid_ask_rows(flatten_orderbook_payload(payload, 1782432000000))
     write_orderbook_rows(output_dir, rows, discovery.ticker_categories)
 
     assert (output_dir / "metadata" / "markets.csv").exists()
     assert (output_dir / "metadata" / "series.csv").exists()
     orderbook_path = output_dir / "orderbooks" / "T1.csv"
     assert orderbook_path.exists()
-    assert "T1,yes,0,1500,10000,1782432000000:T1" in orderbook_path.read_text()
+    text = orderbook_path.read_text()
+    assert "capture_ts_ms,snapshot_id,ticker,outcome,book_side,level,price,size" in text
+    assert "1782432000000,1782432000000:T1,T1,yes,bid,0,1500,10000" in text
+    assert "1782432000000,1782432000000:T1,T1,no,ask,0,8500,10000" in text
 
 
 def check_gap_logger() -> None:
@@ -159,22 +162,22 @@ def check_capture_inspector() -> None:
             }
         ]
     }
-    rows = flatten_orderbook_payload(payload, 1782432000000)
+    rows = derive_bid_ask_rows(flatten_orderbook_payload(payload, 1782432000000))
     write_orderbook_rows(output_dir, rows, discovery.ticker_categories)
     gap_logger = GapLogger(output_dir)
     gap_logger.log("startup", "test")
-    (output_dir / "run_summary.json").write_text(json.dumps({"rows": 1, "zero_row_batches": 0}) + "\n")
+    (output_dir / "run_summary.json").write_text(json.dumps({"rows": 2, "zero_row_batches": 0}) + "\n")
 
     summary = inspect_capture(output_dir)
     assert summary.orderbook_files == 1
-    assert summary.orderbook_rows == 1
+    assert summary.orderbook_rows == 2
     assert summary.tickers == {"T1"}
     assert summary.categories == {"Sports"}
     assert summary.dates == {"2026-06-26"}
     assert len(summary.snapshots) == 1
-    assert summary.total_size == 10000
-    assert summary.total_top_level_size == 10000
-    assert summary.run_summary["rows"] == 1
+    assert summary.total_size == 20000
+    assert summary.total_top_level_size == 20000
+    assert summary.run_summary["rows"] == 2
     assert summary.run_summary["zero_row_batches"] == 0
     assert summary.gap_events["startup"] == 1
 
@@ -229,7 +232,12 @@ def check_derived_bid_ask() -> None:
             }
         ]
     }
-    write_orderbook_rows(output_dir, flatten_orderbook_payload(payload, 1782432000000), discovery.ticker_categories)
+    raw_path = output_dir / "orderbooks" / "T1.csv"
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
+    raw_path.write_text(
+        "capture_ts_ms,ticker,side,level,price,size,snapshot_id\n"
+        "1782432000000,T1,no,0,8500,5000,1782432000000:T1\n"
+    )
     assert derive_capture(output_dir, derived_dir) == 2
     derived_path = derived_dir / "orderbooks" / "T1.csv"
     text = derived_path.read_text()

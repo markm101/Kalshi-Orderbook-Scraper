@@ -134,19 +134,24 @@ def _add_spread_metrics(output_dir: Path, summary: CaptureSummary) -> None:
                 if row.get("level") != "0":
                     continue
                 snapshot_id = row.get("snapshot_id") or f"{row.get('capture_ts_ms', '')}:{row.get('ticker', '')}"
-                side = row.get("side", "")
                 try:
                     price = int(row.get("price", ""))
                 except ValueError:
                     continue
-                best_by_snapshot.setdefault((snapshot_id, row.get("ticker", "")), {})[side] = price
+                key = (snapshot_id, row.get("ticker", ""))
+                if row.get("outcome") == "yes" and row.get("book_side") in {"bid", "ask"}:
+                    best_by_snapshot.setdefault(key, {})[row["book_side"]] = price
+                    continue
+                side = row.get("side", "")
+                if side == "yes":
+                    best_by_snapshot.setdefault(key, {})["bid"] = price
+                elif side == "no":
+                    best_by_snapshot.setdefault(key, {})["ask"] = 10000 - price
 
-    for sides in best_by_snapshot.values():
-        if "yes" not in sides or "no" not in sides:
+    for book in best_by_snapshot.values():
+        if "bid" not in book or "ask" not in book:
             continue
-        yes_bid = sides["yes"]
-        yes_ask = 10000 - sides["no"]
-        spread = yes_ask - yes_bid
+        spread = book["ask"] - book["bid"]
         summary.spread_count += 1
         if summary.min_yes_spread is None or spread < summary.min_yes_spread:
             summary.min_yes_spread = spread

@@ -20,7 +20,7 @@ Out of scope:
 
 ## Current Implementation
 
-V1 is complete and publishable as a read-only REST polling capture tool. The project now has auth, discovery, liquid selection, raw capture, metadata, gap logging, run summaries, derived bid/ask export, spread/depth reporting, and a v1 runbook.
+V1 is complete and publishable as a read-only REST polling capture tool. The project now has auth, discovery, liquid selection, bid/ask capture output, metadata, gap logging, run summaries, spread/depth reporting, and a v1 runbook.
 
 Post-v1 work should focus on longer capture validation, optional WebSocket capture if REST polling is insufficient, and analysis helpers such as slippage reporting. Do not add trading behavior.
 
@@ -74,8 +74,9 @@ Implemented behavior:
 - graceful SIGINT/SIGTERM handling
 - `--once` one-cycle capture
 - `--duration-seconds` timed capture
-- derived bid/ask export
-- spread/depth reporting for derived bid/ask output
+- bid/ask CSV capture output
+- old raw-to-bid/ask migration helper
+- spread/depth reporting for bid/ask output
 - v1 runbook with recommended workflow, long-run notes, and troubleshooting
 - standard-library inspection and offline checks
 
@@ -159,9 +160,9 @@ Batch shape:
 }
 ```
 
-## Raw Data Schema
+## Internal Raw Data Schema
 
-Raw orderbook rows:
+Kalshi REST returns bid-only books. Internally, `OrderBookRow` represents raw bid rows before capture writes the default bid/ask CSV output:
 
 ```text
 capture_ts_ms,ticker,side,level,price,size,snapshot_id
@@ -174,7 +175,7 @@ Rules:
 - `price` is fixed units where `10000 = $1.0000`.
 - `size` is fixed count units where `100 = 1 contract`.
 - `snapshot_id = capture_ts_ms:ticker`.
-- Category is not stored in raw rows. It is stored in `metadata/series.csv`; orderbook files are written by ticker.
+- Category is not stored in orderbook rows. It is stored in `metadata/series.csv`; orderbook files are written by ticker.
 
 Flattening example:
 
@@ -190,9 +191,9 @@ price=1500,size=10000
 
 Use `Decimal`, never binary float arithmetic.
 
-## Derived Bid/Ask Schema
+## Default Bid/Ask Schema
 
-Derived rows from `scripts/derive_bid_ask.py`:
+Captured orderbook CSV rows:
 
 ```text
 capture_ts_ms,snapshot_id,ticker,outcome,book_side,level,price,size
@@ -205,7 +206,7 @@ YES bid -> YES bid and NO ask at 10000 - price
 NO bid  -> NO bid and YES ask at 10000 - price
 ```
 
-Raw capture remains the source of truth. Derived bid/ask is for analysis/backtesting convenience.
+Capture writes this bid/ask schema by default. `scripts/derive_bid_ask.py` is only a migration helper for older raw bid-only captures.
 
 ## Output Layout
 
@@ -281,16 +282,10 @@ Inspect output:
 python scripts/inspect_capture.py exports/short_capture
 ```
 
-Create derived bid/ask rows:
-
-```bash
-python scripts/derive_bid_ask.py exports/short_capture exports/short_capture_derived
-```
-
 Report spread/depth metrics:
 
 ```bash
-python scripts/spread_depth_report.py exports/short_capture_derived --output-csv exports/short_capture_spread_depth.csv
+python scripts/spread_depth_report.py exports/short_capture --output-csv exports/short_capture_spread_depth.csv
 ```
 
 V1 runbook:

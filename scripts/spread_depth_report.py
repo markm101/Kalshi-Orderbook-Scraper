@@ -58,7 +58,7 @@ class ReportRow:
 
 
 def build_report(
-    derived_dir: Path,
+    output_dir: Path,
     tickers: tuple[str, ...] = (),
     categories: tuple[str, ...] = (),
     outcomes: tuple[str, ...] = (),
@@ -67,9 +67,9 @@ def build_report(
     category_filter = set(categories)
     outcome_filter = set(outcomes)
     books: dict[tuple[str, str, str, str], SnapshotBook] = {}
-    ticker_categories = _load_ticker_categories(derived_dir)
+    ticker_categories = _load_ticker_categories(output_dir)
 
-    for path in sorted((derived_dir / "orderbooks").glob("*.csv")):
+    for path in sorted((output_dir / "orderbooks").glob("*.csv")):
         with path.open(newline="") as csv_file:
             reader = csv.DictReader(csv_file)
             for row in reader:
@@ -224,8 +224,8 @@ def _parse_csv(value: str) -> tuple[str, ...]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Report spread and depth metrics from derived bid/ask CSVs.")
-    parser.add_argument("derived_dir", type=Path, help="Derived bid/ask output directory")
+    parser = argparse.ArgumentParser(description="Report spread and depth metrics from bid/ask capture CSVs.")
+    parser.add_argument("output_dir", type=Path, help="Capture output directory")
     parser.add_argument("--tickers", default="", help="Comma-separated tickers to include")
     parser.add_argument("--categories", default="", help="Comma-separated category partition names to include")
     parser.add_argument("--outcomes", default="", help="Comma-separated outcomes to include: yes,no")
@@ -237,7 +237,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     rows = build_report(
-        args.derived_dir,
+        args.output_dir,
         tickers=_parse_csv(args.tickers),
         categories=_parse_csv(args.categories),
         outcomes=_parse_csv(args.outcomes),

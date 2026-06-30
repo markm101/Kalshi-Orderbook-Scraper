@@ -12,7 +12,7 @@ from kalshi_capture.client import KalshiClient
 from kalshi_capture.config import Config
 from kalshi_capture.discovery import DiscoveryResult, discover_markets
 from kalshi_capture.gaps import GapLogger
-from kalshi_capture.orderbook import fetch_orderbook_batch
+from kalshi_capture.orderbook import derive_bid_ask_rows, fetch_orderbook_batch
 from kalshi_capture.selector import select_liquid_tickers
 from kalshi_capture.storage import write_metadata, write_orderbook_rows
 
@@ -137,10 +137,11 @@ def _capture_cycle(
                 gap_logger.log("zero_rows", f"no orderbook levels returned for tickers={','.join(chunk)}")
                 stats.zero_row_batches += 1
                 logging.warning("orderbook batch returned zero rows tickers=%s", chunk)
-            write_orderbook_rows(config.output_dir, batch.rows, categories)
+            rows = derive_bid_ask_rows(batch.rows)
+            write_orderbook_rows(config.output_dir, rows, categories)
             stats.batches += 1
-            stats.rows += len(batch.rows)
-            logging.info("captured tickers=%s rows=%s", len(chunk), len(batch.rows))
+            stats.rows += len(rows)
+            logging.info("captured tickers=%s rows=%s", len(chunk), len(rows))
         except httpx.HTTPStatusError as exc:
             status_code = exc.response.status_code
             event_type = "rate_limited" if status_code == 429 else "http_error"

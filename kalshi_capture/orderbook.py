@@ -19,6 +19,18 @@ class OrderBookRow:
 
 
 @dataclass(frozen=True)
+class BidAskRow:
+    capture_ts_ms: int
+    snapshot_id: str
+    ticker: str
+    outcome: str
+    book_side: str
+    level: int
+    price: int
+    size: int
+
+
+@dataclass(frozen=True)
 class OrderBookBatch:
     rows: tuple[OrderBookRow, ...]
     returned_tickers: tuple[str, ...]
@@ -76,6 +88,20 @@ def flatten_orderbook_payload(
 
 def make_snapshot_id(capture_ts_ms: int, ticker: str) -> str:
     return f"{capture_ts_ms}:{ticker}"
+
+
+def derive_bid_ask_rows(rows: tuple[OrderBookRow, ...]) -> tuple[BidAskRow, ...]:
+    derived: list[BidAskRow] = []
+    for row in rows:
+        if row.side == "yes":
+            derived.append(BidAskRow(row.capture_ts_ms, row.snapshot_id, row.ticker, "yes", "bid", row.level, row.price, row.size))
+            derived.append(BidAskRow(row.capture_ts_ms, row.snapshot_id, row.ticker, "no", "ask", row.level, 10000 - row.price, row.size))
+        elif row.side == "no":
+            derived.append(BidAskRow(row.capture_ts_ms, row.snapshot_id, row.ticker, "no", "bid", row.level, row.price, row.size))
+            derived.append(BidAskRow(row.capture_ts_ms, row.snapshot_id, row.ticker, "yes", "ask", row.level, 10000 - row.price, row.size))
+        else:
+            raise ValueError(f"Unknown raw side: {row.side!r}")
+    return tuple(derived)
 
 
 def extract_orderbook_tickers(payload: dict[str, Any]) -> tuple[str, ...]:
