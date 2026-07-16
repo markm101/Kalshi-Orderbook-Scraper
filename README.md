@@ -26,25 +26,6 @@ It does not:
 - run a backtest
 - recreate order books from before the collector was running
 
-## Why Order Book Data Matters
-
-Price history can answer:
-
-```text
-Did the market move from 40c to 55c?
-```
-
-Order book history can answer:
-
-```text
-Could I actually buy size at 40c?
-How much slippage would I have taken?
-Was the spread tradable?
-How much depth was available?
-```
-
-This matters for realistic backtesting, especially for sizing, liquidity filters, spread-aware execution, and passive order assumptions.
-
 ## Current Status
 
 V1 is complete and publishable as a read-only Kalshi order book capture tool.
@@ -404,5 +385,6 @@ python scripts/offline_checks.py
 - `scripts/derive_bid_ask.py`: optional raw-to-bid/ask conversion
 - `scripts/latest_spread_report.py`: latest per-ticker spread reporting
 - `scripts/spread_depth_report.py`: bid/ask spread and depth reporting
+- `scripts/orderbook_glyph_tk.py`: experimental Tkinter raw bid-pressure glyph viewer
 - `docs/v1_runbook.md`: recommended v1 workflow, long-run notes, and troubleshooting
 - `AGENTS.md`: implementation context for coding agents
