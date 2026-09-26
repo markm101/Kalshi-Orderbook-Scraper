@@ -4,7 +4,7 @@ import csv
 from dataclasses import asdict, fields
 from pathlib import Path
 
-from kalshi_capture.discovery import DiscoveryResult, MarketMetadata, SeriesMetadata
+from kalshi_capture.discovery import DiscoveryResult, MarketMetadata, MarketResult, SeriesMetadata
 from kalshi_capture.orderbook import OrderBookRow
 
 
@@ -13,6 +13,10 @@ def write_metadata(output_dir: Path, discovery: DiscoveryResult) -> None:
     metadata_dir.mkdir(parents=True, exist_ok=True)
     _write_dataclass_csv(metadata_dir / "markets.csv", discovery.markets, MarketMetadata)
     _write_dataclass_csv(metadata_dir / "series.csv", discovery.series, SeriesMetadata)
+
+
+def append_market_result(output_dir: Path, result: MarketResult) -> None:
+    _append_dataclass_csv(output_dir / "metadata" / "results.csv", (result,), MarketResult)
 
 
 def write_orderbook_rows(

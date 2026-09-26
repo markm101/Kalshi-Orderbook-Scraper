@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import replace
 import tempfile
 import sys
 from pathlib import Path
@@ -41,10 +42,13 @@ def main() -> None:
     check_liquid_selector_ranks_beyond_first_match()
     check_liquid_selector_diversifies_events()
     check_liquid_selector_uses_fp_fields_and_skips_one_sided()
+    check_liquid_selector_keeps_existing_picks()
     check_spread_depth_report()
     check_latest_spread_report()
     check_latest_snapshots_keep_newest_book()
     check_capture_keeps_latest_spread_in_memory()
+    check_capture_stops_polling_closed_markets()
+    check_capture_keeps_picks_until_they_close()
     print("offline checks passed")
 
 
@@ -480,6 +484,31 @@ def check_liquid_selector_uses_fp_fields_and_skips_one_sided() -> None:
     assert select_liquid_tickers(FakeClient(), 3, scan_pages=1, min_volume=4500) == ("QUIET",)
 
 
+def check_liquid_selector_keeps_existing_picks() -> None:
+    class FakeClient:
+        def get(self, path: str, params=None):
+            if path == "/markets":
+                return {
+                    "markets": [
+                        {"ticker": "A", "event_ticker": "EA", "volume_24h_fp": "300.00"},
+                        {"ticker": "A2", "event_ticker": "EA", "volume_24h_fp": "250.00"},
+                        {"ticker": "B", "event_ticker": "EB", "volume_24h_fp": "200.00"},
+                        {"ticker": "C", "event_ticker": "EC", "volume_24h_fp": "100.00"},
+                    ]
+                }
+            if path == "/markets/orderbooks":
+                tickers = tuple(value for key, value in params if key == "tickers")
+                book = {"yes_dollars": [["0.4000", "10.00"]], "no_dollars": [["0.5500", "10.00"]]}
+                return {"orderbooks": [{"ticker": ticker, "orderbook_fp": book} for ticker in tickers]}
+            raise AssertionError(path)
+
+    assert select_liquid_tickers(FakeClient(), 2, scan_pages=1) == ("A", "B")
+    # Kept picks come first and only the free slots are filled.
+    assert select_liquid_tickers(FakeClient(), 2, scan_pages=1, keep=("C",)) == ("C", "A")
+    # A new pick never shares an event with a kept pick.
+    assert select_liquid_tickers(FakeClient(), 2, scan_pages=1, keep=("A",)) == ("A", "B")
+
+
 def check_spread_depth_report() -> None:
     output_dir = Path(tempfile.mkdtemp())
     metadata_dir = output_dir / "metadata"
@@ -657,12 +686,109 @@ def check_capture_keeps_latest_spread_in_memory() -> None:
         "capture_ts_ms,ticker,side,level,price,size,snapshot_id\n"
         "1782432000000,OLD,yes,0,3000,100,1782432000000:OLD\n"
     )
+    client = FakeClient()
+    run_capture(_capture_config(output_dir, tickers=("T1",)), client, stop_requested=lambda: client.polls >= 3)
+
+    assert len((output_dir / "orderbooks" / "T1.csv").read_text().splitlines()) == 1 + 3 * 2
+    with (output_dir / "latest_spread.csv").open(newline="") as csv_file:
+        latest = [(row["ticker"], row["yes_best_bid"], row["yes_best_ask"]) for row in csv.DictReader(csv_file)]
+    assert latest == [("T1", "4300", "5000")], latest
+
+
+def check_capture_stops_polling_closed_markets() -> None:
+    class FakeClient:
+        def __init__(self) -> None:
+            self.polls = 0
+
+        def market(self, ticker: str) -> dict:
+            market = {"ticker": ticker, "event_ticker": f"SERIES-{ticker}", "series_ticker": "SERIES", "status": "active", "result": ""}
+            if ticker == "T2" and self.polls >= 2:
+                market.update(
+                    status="finalized",
+                    result="yes",
+                    close_time="2026-09-26T05:50:01Z",
+                    settlement_ts="2026-09-26T05:54:06Z",
+                    settlement_value_dollars="1.0000",
+                )
+            return market
+
+        def get(self, path: str, params=None):
+            if path == "/markets":
+                return {"markets": [self.market(ticker) for ticker in params["tickers"].split(",")]}
+            if path == "/series/SERIES":
+                return {"series": {"ticker": "SERIES", "category": "Sports"}}
+            if path == "/markets/orderbooks":
+                self.polls += 1
+                return _two_sided_books(tuple(value for key, value in params if key == "tickers"))
+            raise AssertionError(path)
+
+    output_dir = Path(tempfile.mkdtemp())
+    client = FakeClient()
+    config = _capture_config(output_dir, tickers=("T1", "T2"), discovery_refresh_seconds=0, status_check_seconds=0.0)
+    run_capture(config, client, stop_requested=lambda: client.polls >= 4)
+
+    # T2 settles after two polls: it is not polled again, even though --tickers still lists it.
+    assert _snapshot_count(output_dir, "T1") == 4
+    assert _snapshot_count(output_dir, "T2") == 2
+    results = _read_csv(output_dir / "metadata" / "results.csv")
+    assert [(row["ticker"], row["status"], row["result"], row["settlement_value"], row["close_time"]) for row in results] == [
+        ("T2", "finalized", "yes", "10000", "2026-09-26T05:50:01Z")
+    ]
+    closed = [row for row in _read_csv(output_dir / "gaps.csv") if row["event_type"] == "market_closed"]
+    assert [row["ticker"] for row in closed] == ["T2"]
+
+
+def check_capture_keeps_picks_until_they_close() -> None:
+    class FakeClient:
+        def __init__(self) -> None:
+            self.scans = 0
+            self.orderbook_calls = 0
+
+        def market(self, ticker: str) -> dict:
+            market = {"ticker": ticker, "event_ticker": f"E{ticker}", "series_ticker": "SERIES", "status": "active", "result": ""}
+            if ticker == "B" and self.orderbook_calls >= 3:
+                market.update(status="finalized", result="no", settlement_value_dollars="0.0000")
+            return market
+
+        def get(self, path: str, params=None):
+            if path == "/markets" and "tickers" in params:
+                return {"markets": [self.market(ticker) for ticker in params["tickers"].split(",")]}
+            if path == "/markets":
+                self.scans += 1
+                # After the first pick, C becomes the busiest market. It must not push out B while B is open.
+                volumes = {"A": 300, "B": 200, "C": 100} if self.scans == 1 else {"A": 300, "B": 200, "C": 1000}
+                markets = [dict(self.market(ticker), volume_24h_fp=f"{volume}.00") for ticker, volume in volumes.items()]
+                return {"markets": [market for market in markets if market["status"] == "active"]}
+            if path == "/series/SERIES":
+                return {"series": {"ticker": "SERIES", "category": "Sports"}}
+            if path == "/markets/orderbooks":
+                self.orderbook_calls += 1
+                return _two_sided_books(tuple(value for key, value in params if key == "tickers"))
+            raise AssertionError(path)
+
+    output_dir = Path(tempfile.mkdtemp())
+    client = FakeClient()
+    config = _capture_config(output_dir, tickers=(), select_liquid=2, discovery_refresh_seconds=0, status_check_seconds=0.0)
+    run_capture(config, client, stop_requested=lambda: client.orderbook_calls >= 7)
+
+    snapshots = {ticker: _snapshot_times(output_dir, ticker) for ticker in ("A", "B", "C")}
+    all_polls = set().union(*snapshots.values())
+    assert snapshots["A"] == all_polls
+    assert snapshots["B"] and snapshots["C"]
+    # C only fills B's slot after B closes.
+    assert max(snapshots["B"]) < min(snapshots["C"])
+    assert [row["ticker"] for row in _read_csv(output_dir / "metadata" / "results.csv")] == ["B"]
+    # Metadata keeps every market captured in the run, including the closed one.
+    assert sorted(row["ticker"] for row in _read_csv(output_dir / "metadata" / "markets.csv")) == ["A", "B", "C"]
+
+
+def _capture_config(output_dir: Path, **changes) -> Config:
     config = Config(
         env="demo",
         base_url="",
         key_id="",
         private_key_path=Path("unused.key"),
-        tickers=("T1",),
+        tickers=(),
         select_liquid=0,
         liquid_scan_pages=1,
         min_orderbook_rows=1,
@@ -686,13 +812,27 @@ def check_capture_keeps_latest_spread_in_memory() -> None:
         discovery_refresh_seconds=900,
         log_level="WARNING",
     )
-    client = FakeClient()
-    run_capture(config, client, stop_requested=lambda: client.polls >= 3)
+    return replace(config, **changes)
 
-    assert len((output_dir / "orderbooks" / "T1.csv").read_text().splitlines()) == 1 + 3 * 2
-    with (output_dir / "latest_spread.csv").open(newline="") as csv_file:
-        latest = [(row["ticker"], row["yes_best_bid"], row["yes_best_ask"]) for row in csv.DictReader(csv_file)]
-    assert latest == [("T1", "4300", "5000")], latest
+
+def _two_sided_books(tickers: tuple[str, ...]) -> dict:
+    book = {"yes_dollars": [["0.4000", "10.00"]], "no_dollars": [["0.5500", "10.00"]]}
+    return {"orderbooks": [{"ticker": ticker, "orderbook_fp": book} for ticker in tickers]}
+
+
+def _read_csv(path: Path) -> list[dict[str, str]]:
+    if not path.exists():
+        return []
+    with path.open(newline="") as csv_file:
+        return list(csv.DictReader(csv_file))
+
+
+def _snapshot_times(output_dir: Path, ticker: str) -> set[int]:
+    return {int(row["capture_ts_ms"]) for row in _read_csv(output_dir / "orderbooks" / f"{ticker}.csv")}
+
+
+def _snapshot_count(output_dir: Path, ticker: str) -> int:
+    return len(_snapshot_times(output_dir, ticker))
 
 
 if __name__ == "__main__":

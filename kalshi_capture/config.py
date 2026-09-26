@@ -41,6 +41,7 @@ class Config:
     heartbeat_seconds: int
     discovery_refresh_seconds: int
     log_level: str
+    status_check_seconds: float = 60.0
 
 
 def read_env_file(path: Path) -> dict[str, str]:
@@ -91,6 +92,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--duration-seconds", type=float, default=0.0, help="Stop capture after this many seconds")
     parser.add_argument("--heartbeat-seconds", type=int, default=300)
     parser.add_argument("--discovery-refresh-seconds", type=int, default=900)
+    parser.add_argument(
+        "--status-check-seconds",
+        type=float,
+        default=60.0,
+        help="Seconds between market status checks; closed markets stop being polled",
+    )
     parser.add_argument("--log-level", default="INFO")
     return parser
 
@@ -132,6 +139,8 @@ def load_config(argv: list[str] | None = None) -> Config:
         raise SystemExit("--heartbeat-seconds must be greater than 0")
     if args.discovery_refresh_seconds <= 0:
         raise SystemExit("--discovery-refresh-seconds must be greater than 0")
+    if args.status_check_seconds <= 0:
+        raise SystemExit("--status-check-seconds must be greater than 0")
 
     return Config(
         env=args.env,
@@ -161,4 +170,5 @@ def load_config(argv: list[str] | None = None) -> Config:
         heartbeat_seconds=args.heartbeat_seconds,
         discovery_refresh_seconds=args.discovery_refresh_seconds,
         log_level=args.log_level.upper(),
+        status_check_seconds=args.status_check_seconds,
     )

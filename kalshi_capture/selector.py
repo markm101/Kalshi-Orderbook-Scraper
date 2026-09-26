@@ -40,9 +40,12 @@ def select_liquid_tickers(
     min_close_hours: float = 0.0,
     min_volume: int = 0,
     min_open_interest: int = 0,
+    keep: tuple[str, ...] = (),
 ) -> tuple[str, ...]:
     if limit <= 0:
         return ()
+    if len(keep) >= limit:
+        return keep
 
     candidates: dict[str, LiquidMarketCandidate] = {}
     series_categories: dict[str, str] = {}
@@ -61,7 +64,7 @@ def select_liquid_tickers(
                 min_open_interest=min_open_interest,
                 series_categories=series_categories,
             )
-        return _rank_candidates(tuple(candidates.values()), limit)
+        return _rank_candidates(tuple(candidates.values()), limit, keep)
 
     cursor = ""
     for _ in range(scan_pages):
@@ -89,7 +92,7 @@ def select_liquid_tickers(
         if not cursor:
             break
 
-    return _rank_candidates(tuple(candidates.values()), limit)
+    return _rank_candidates(tuple(candidates.values()), limit, keep)
 
 
 def _add_candidates(
@@ -242,18 +245,22 @@ def market_passes_filters(
     return True
 
 
-def _rank_candidates(candidates: tuple[LiquidMarketCandidate, ...], limit: int) -> tuple[str, ...]:
+def _rank_candidates(
+    candidates: tuple[LiquidMarketCandidate, ...],
+    limit: int,
+    keep: tuple[str, ...] = (),
+) -> tuple[str, ...]:
     ranked = sorted(candidates, key=_candidate_sort_key)
-    selected: list[LiquidMarketCandidate] = []
-    selected_groups: set[str] = set()
+    selected = list(keep)
+    selected_groups = {candidate.group_key for candidate in candidates if candidate.ticker in keep}
     for candidate in ranked:
-        if candidate.group_key in selected_groups:
-            continue
-        selected.append(candidate)
-        selected_groups.add(candidate.group_key)
         if len(selected) >= limit:
-            return tuple(candidate.ticker for candidate in selected)
-    return tuple(candidate.ticker for candidate in selected)
+            break
+        if candidate.ticker in keep or candidate.group_key in selected_groups:
+            continue
+        selected.append(candidate.ticker)
+        selected_groups.add(candidate.group_key)
+    return tuple(selected)
 
 
 def _candidate_sort_key(candidate: LiquidMarketCandidate) -> tuple[int, int, int, int, int, int, int, str]:

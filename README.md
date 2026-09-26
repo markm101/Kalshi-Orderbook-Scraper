@@ -167,6 +167,8 @@ Optional selector filters:
 
 The selector skips multivariate combo markets and markets without bids on both YES and NO, then ranks the rest by 24h volume, total volume, open interest, best-level spread, best-level depth, and book rows. It returns up to `--select-liquid` distinct parent events, so ladder markets such as adjacent BTC strikes do not fill the whole selection. Use `--min-close-hours` to exclude markets that are too close to settlement.
 
+Picked markets stay on the list until they close. Re-picks run every `--discovery-refresh-seconds` (default 900) and only fill free slots. Every `--status-check-seconds` (default 60), capture checks the status of each tracked market. A market that has closed stops being polled, gets a `market_closed` row in `gaps.csv`, and its result is appended to `metadata/results.csv` once Kalshi reports it. This applies to markets passed with `--tickers` too.
+
 Example filtered selector run:
 
 ```bash
@@ -248,13 +250,14 @@ exports/short_capture/
   metadata/
     markets.csv
     series.csv
+    results.csv
   gaps.csv
   run_summary.json
   latest_spread.csv
   spread_depth.csv
 ```
 
-Each ticker gets its own CSV under `orderbooks/`. Category is stored in `metadata/series.csv`, not in every order book row.
+Each ticker gets its own CSV under `orderbooks/`. Category is stored in `metadata/series.csv`, not in every order book row. `metadata/markets.csv` keeps every market captured during the run, including ones that have closed. `metadata/results.csv` has one row per closed market: `ticker,event_ticker,status,result,settlement_value,close_time,settlement_ts`, with `settlement_value` in the same fixed units as prices.
 
 ## Order Book CSV
 

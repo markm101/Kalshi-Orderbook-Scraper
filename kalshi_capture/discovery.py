@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from kalshi_capture.client import KalshiClient
 
 
 UNKNOWN_CATEGORY = "Unknown"
+# Trading has stopped in these states; "determined" and "finalized" also carry the result.
+CLOSED_MARKET_STATUSES = frozenset({"closed", "determined", "finalized", "settled"})
 
 
 @dataclass(frozen=True)
@@ -34,6 +37,17 @@ class SeriesMetadata:
     title: str
     frequency: str
     updated_at: str
+
+
+@dataclass(frozen=True)
+class MarketResult:
+    ticker: str
+    event_ticker: str
+    status: str
+    result: str
+    settlement_value: int | None
+    close_time: str
+    settlement_ts: str
 
 
 @dataclass(frozen=True)
@@ -66,7 +80,7 @@ def discover_markets(
     raw_markets: dict[str, dict[str, Any]] = {}
 
     if tickers:
-        raw_markets.update(_fetch_markets_by_ticker(client, tickers))
+        raw_markets.update(fetch_markets_by_ticker(client, tickers))
 
     for series_ticker in series:
         for market in _fetch_open_markets(client, series_ticker=series_ticker):
@@ -98,7 +112,7 @@ def discover_markets(
     return DiscoveryResult(markets=market_items, series=series_items)
 
 
-def _fetch_markets_by_ticker(client: KalshiClient, tickers: tuple[str, ...]) -> dict[str, dict[str, Any]]:
+def fetch_markets_by_ticker(client: KalshiClient, tickers: tuple[str, ...]) -> dict[str, dict[str, Any]]:
     markets: dict[str, dict[str, Any]] = {}
     for i in range(0, len(tickers), 100):
         chunk = tickers[i : i + 100]
@@ -201,6 +215,27 @@ def _market_metadata(item: dict[str, Any]) -> MarketMetadata:
         close_time=_as_str(item.get("close_time")),
         updated_time=_as_str(item.get("updated_time")),
     )
+
+
+def market_result(item: dict[str, Any]) -> MarketResult:
+    return MarketResult(
+        ticker=_as_str(item.get("ticker")),
+        event_ticker=_as_str(item.get("event_ticker")),
+        status=_as_str(item.get("status")),
+        result=_as_str(item.get("result")),
+        settlement_value=_dollars_to_fixed_units(item.get("settlement_value_dollars")),
+        close_time=_as_str(item.get("close_time")),
+        settlement_ts=_as_str(item.get("settlement_ts")),
+    )
+
+
+def _dollars_to_fixed_units(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(Decimal(str(value)) * 10000)
+    except InvalidOperation:
+        return None
 
 
 def _series_metadata(item: dict[str, Any]) -> SeriesMetadata:
