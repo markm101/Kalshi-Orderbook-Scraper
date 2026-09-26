@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
@@ -55,6 +56,28 @@ class SnapshotBook:
     top_ask_size: int = 0
     total_bid_size: int = 0
     total_ask_size: int = 0
+
+
+class LatestSnapshots:
+    """Rows of the newest captured snapshot per ticker, so the latest report needs no full file scan."""
+
+    def __init__(self) -> None:
+        self._latest: dict[str, tuple[tuple[int, str], list[dict[str, str]]]] = {}
+
+    def update(self, rows: Iterable[dict[str, str]]) -> None:
+        for row in rows:
+            ticker = row.get("ticker", "")
+            snapshot_id = row.get("snapshot_id") or f"{row.get('capture_ts_ms', '')}:{ticker}"
+            key = (_parse_capture_ts_ms(row.get("capture_ts_ms", ""), snapshot_id), snapshot_id)
+            current = self._latest.get(ticker)
+            if current is None or key > current[0]:
+                self._latest[ticker] = (key, [row])
+            elif key == current[0]:
+                current[1].append(row)
+
+    def rows(self) -> Iterator[dict[str, str]]:
+        for _, rows in self._latest.values():
+            yield from rows
 
 
 @dataclass
@@ -129,24 +152,28 @@ def build_latest_report(
     output_dir: Path,
     tickers: tuple[str, ...] = (),
     categories: tuple[str, ...] = (),
+    snapshots: LatestSnapshots | None = None,
 ) -> tuple[LatestSpreadRow, ...]:
     ticker_filter = set(tickers)
     category_filter = set(categories)
     books: dict[tuple[str, str, str, str], SnapshotBook] = {}
     ticker_categories = _load_ticker_categories(output_dir)
 
-    for path in sorted((output_dir / "orderbooks").glob("*.csv")):
-        with path.open(newline="") as csv_file:
-            reader = csv.DictReader(csv_file)
-            for row in reader:
-                for report_row in _report_input_rows(row):
-                    ticker = report_row.get("ticker", "")
-                    category = ticker_categories.get(ticker, "Unknown")
-                    if category_filter and category not in category_filter:
-                        continue
-                    if ticker_filter and ticker not in ticker_filter:
-                        continue
-                    _add_row(books, category, report_row)
+    if snapshots is None:
+        snapshots = LatestSnapshots()
+        for path in sorted((output_dir / "orderbooks").glob("*.csv")):
+            with path.open(newline="") as csv_file:
+                snapshots.update(csv.DictReader(csv_file))
+
+    for row in snapshots.rows():
+        for report_row in _report_input_rows(row):
+            ticker = report_row.get("ticker", "")
+            category = ticker_categories.get(ticker, "Unknown")
+            if category_filter and category not in category_filter:
+                continue
+            if ticker_filter and ticker not in ticker_filter:
+                continue
+            _add_row(books, category, report_row)
 
     return tuple(_summarize_latest_books(books))
 

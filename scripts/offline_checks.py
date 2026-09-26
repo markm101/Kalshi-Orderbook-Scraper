@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import tempfile
 import sys
 from pathlib import Path
@@ -9,12 +10,19 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from kalshi_capture.config import read_env_file
+from kalshi_capture.capture import run_capture
+from kalshi_capture.config import Config, read_env_file
 from kalshi_capture.discovery import DiscoveryResult, MarketMetadata, SeriesMetadata
 from kalshi_capture.gaps import GapLogger
 from kalshi_capture.orderbook import extract_orderbook_tickers, flatten_orderbook_payload
 from kalshi_capture.selector import market_passes_filters, score_orderbook_payload, select_liquid_tickers
-from kalshi_capture.spread_depth import build_latest_report, build_report, write_latest_report, write_report
+from kalshi_capture.spread_depth import (
+    LatestSnapshots,
+    build_latest_report,
+    build_report,
+    write_latest_report,
+    write_report,
+)
 from kalshi_capture.storage import write_metadata, write_orderbook_rows
 from scripts.derive_bid_ask import derive_capture, derive_rows
 from scripts.inspect_capture import inspect_capture
@@ -35,6 +43,8 @@ def main() -> None:
     check_liquid_selector_uses_fp_fields_and_skips_one_sided()
     check_spread_depth_report()
     check_latest_spread_report()
+    check_latest_snapshots_keep_newest_book()
+    check_capture_keeps_latest_spread_in_memory()
     print("offline checks passed")
 
 
@@ -584,6 +594,105 @@ def check_latest_spread_report() -> None:
     report_path = output_dir / "latest_spread.csv"
     write_latest_report(rows, report_path)
     assert "book_state" in report_path.read_text()
+
+
+def check_latest_snapshots_keep_newest_book() -> None:
+    def raw_row(ticker: str, ts: int, side: str, price: int, size: int) -> dict[str, str]:
+        return {
+            "capture_ts_ms": str(ts),
+            "ticker": ticker,
+            "side": side,
+            "level": "0",
+            "price": str(price),
+            "size": str(size),
+            "snapshot_id": f"{ts}:{ticker}",
+        }
+
+    snapshots = LatestSnapshots()
+    snapshots.update(
+        [
+            raw_row("T1", 1000, "yes", 4000, 1000),
+            raw_row("T1", 1000, "no", 5500, 2000),
+            raw_row("T2", 1000, "yes", 2000, 500),
+        ]
+    )
+    # Newer T1 book with no NO bids: it replaces the old book rather than merging with it.
+    snapshots.update([raw_row("T1", 2000, "yes", 4200, 3000)])
+    # An older T1 book arriving late is ignored.
+    snapshots.update([raw_row("T1", 1500, "no", 5000, 100)])
+
+    report = {row.ticker: row for row in build_latest_report(Path(tempfile.mkdtemp()), snapshots=snapshots)}
+    assert (report["T1"].capture_ts_ms, report["T1"].yes_best_bid, report["T1"].no_best_bid) == (2000, 4200, None)
+    assert report["T1"].book_state == "one_sided"
+    assert (report["T2"].capture_ts_ms, report["T2"].yes_best_bid) == (1000, 2000)
+
+
+def check_capture_keeps_latest_spread_in_memory() -> None:
+    class FakeClient:
+        def __init__(self) -> None:
+            self.polls = 0
+
+        def get(self, path: str, params=None):
+            if path == "/markets":
+                return {"markets": [{"ticker": "T1", "event_ticker": "SERIES-TEST", "series_ticker": "SERIES"}]}
+            if path == "/series/SERIES":
+                return {"series": {"ticker": "SERIES", "category": "Sports"}}
+            if path == "/markets/orderbooks":
+                self.polls += 1
+                yes_price = f"0.{40 + self.polls}00"
+                return {
+                    "orderbooks": [
+                        {
+                            "ticker": "T1",
+                            "orderbook_fp": {"yes_dollars": [[yes_price, "10.00"]], "no_dollars": [["0.5000", "10.00"]]},
+                        }
+                    ]
+                }
+            raise AssertionError(path)
+
+    output_dir = Path(tempfile.mkdtemp())
+    # A market captured by an earlier run into the same directory. Each poll must not re-read old CSVs.
+    (output_dir / "orderbooks").mkdir(parents=True)
+    (output_dir / "orderbooks" / "OLD.csv").write_text(
+        "capture_ts_ms,ticker,side,level,price,size,snapshot_id\n"
+        "1782432000000,OLD,yes,0,3000,100,1782432000000:OLD\n"
+    )
+    config = Config(
+        env="demo",
+        base_url="",
+        key_id="",
+        private_key_path=Path("unused.key"),
+        tickers=("T1",),
+        select_liquid=0,
+        liquid_scan_pages=1,
+        min_orderbook_rows=1,
+        min_top_level_size=0,
+        selector_categories=(),
+        selector_exclude_categories=(),
+        min_close_hours=0.0,
+        min_volume=0,
+        min_open_interest=0,
+        series=(),
+        categories=(),
+        exclude_categories=(),
+        interval=0.01,
+        output_dir=output_dir,
+        max_levels=0,
+        dry_run=False,
+        discover_only=False,
+        once=False,
+        duration_seconds=0.0,
+        heartbeat_seconds=300,
+        discovery_refresh_seconds=900,
+        log_level="WARNING",
+    )
+    client = FakeClient()
+    run_capture(config, client, stop_requested=lambda: client.polls >= 3)
+
+    assert len((output_dir / "orderbooks" / "T1.csv").read_text().splitlines()) == 1 + 3 * 2
+    with (output_dir / "latest_spread.csv").open(newline="") as csv_file:
+        latest = [(row["ticker"], row["yes_best_bid"], row["yes_best_ask"]) for row in csv.DictReader(csv_file)]
+    assert latest == [("T1", "4300", "5000")], latest
 
 
 if __name__ == "__main__":

@@ -313,7 +313,7 @@ NO bid  -> NO bid and YES ask at 10000 - price
 
 ## Spread And Depth Report
 
-Each capture updates `latest_spread.csv` after every polling cycle. This is the newest captured snapshot per ticker, with derived YES/NO bid, ask, and spread fields:
+Each capture updates `latest_spread.csv` after every polling cycle from books held in memory, so the update stays fast as the run grows. This is the newest captured snapshot per ticker in the current run, with derived YES/NO bid, ask, and spread fields:
 
 ```bash
 python scripts/latest_spread_report.py exports/short_capture --limit 20

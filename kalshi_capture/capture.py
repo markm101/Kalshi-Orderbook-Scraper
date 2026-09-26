@@ -12,9 +12,15 @@ from kalshi_capture.client import KalshiClient
 from kalshi_capture.config import Config
 from kalshi_capture.discovery import DiscoveryResult, discover_markets
 from kalshi_capture.gaps import GapLogger
-from kalshi_capture.orderbook import fetch_orderbook_batch
+from kalshi_capture.orderbook import OrderBookRow, fetch_orderbook_batch
 from kalshi_capture.selector import select_liquid_tickers
-from kalshi_capture.spread_depth import build_latest_report, build_report, write_latest_report, write_report
+from kalshi_capture.spread_depth import (
+    LatestSnapshots,
+    build_latest_report,
+    build_report,
+    write_latest_report,
+    write_report,
+)
 from kalshi_capture.storage import write_metadata, write_orderbook_rows
 
 
@@ -40,6 +46,7 @@ def run_capture(
     should_stop = stop_requested or (lambda: False)
     gap_logger = GapLogger(config.output_dir)
     stats = CaptureStats(started_ts_ms=int(time.time() * 1000))
+    latest_snapshots = LatestSnapshots()
     gap_logger.log("startup", "capture started")
 
     try:
@@ -53,8 +60,8 @@ def run_capture(
         write_metadata(config.output_dir, discovery)
 
         if config.once:
-            _capture_cycle(config, client, discovery, gap_logger, stats)
-            _write_latest_spread_report(config, gap_logger)
+            _capture_cycle(config, client, discovery, gap_logger, stats, latest_snapshots)
+            _write_latest_spread_report(config, gap_logger, latest_snapshots)
             return
 
         next_discovery_refresh = time.monotonic() + config.discovery_refresh_seconds
@@ -68,8 +75,8 @@ def run_capture(
                 write_metadata(config.output_dir, discovery)
                 next_discovery_refresh = time.monotonic() + config.discovery_refresh_seconds
 
-            _capture_cycle(config, client, discovery, gap_logger, stats)
-            _write_latest_spread_report(config, gap_logger)
+            _capture_cycle(config, client, discovery, gap_logger, stats, latest_snapshots)
+            _write_latest_spread_report(config, gap_logger, latest_snapshots)
 
             if time.monotonic() >= next_heartbeat:
                 _log_heartbeat(discovery, stats)
@@ -81,7 +88,7 @@ def run_capture(
         stats.ended_ts_ms = int(time.time() * 1000)
         _write_run_summary(config, stats)
         _write_spread_depth_report(config, gap_logger)
-        _write_latest_spread_report(config, gap_logger)
+        _write_latest_spread_report(config, gap_logger, latest_snapshots)
         gap_logger.log("shutdown", "capture stopped")
 
 
@@ -122,6 +129,7 @@ def _capture_cycle(
     discovery: DiscoveryResult,
     gap_logger: GapLogger,
     stats: CaptureStats,
+    latest_snapshots: LatestSnapshots,
 ) -> None:
     tickers = tuple(market.ticker for market in discovery.markets if market.ticker)
     categories = discovery.ticker_categories
@@ -143,6 +151,7 @@ def _capture_cycle(
                 stats.zero_row_batches += 1
                 logging.warning("orderbook batch returned zero rows tickers=%s", chunk)
             write_orderbook_rows(config.output_dir, batch.rows, categories)
+            latest_snapshots.update(_csv_row(row) for row in batch.rows)
             stats.batches += 1
             stats.rows += len(batch.rows)
             logging.info("captured tickers=%s rows=%s", len(chunk), len(batch.rows))
@@ -160,6 +169,10 @@ def _capture_cycle(
             gap_logger.log("exception", f"tickers={','.join(chunk)} error={exc}")
             stats.errors += 1
             logging.exception("orderbook capture failed tickers=%s", chunk)
+
+
+def _csv_row(row: OrderBookRow) -> dict[str, str]:
+    return {name: str(value) for name, value in asdict(row).items()}
 
 
 def _log_missing_tickers(
@@ -216,9 +229,9 @@ def _write_spread_depth_report(config: Config, gap_logger: GapLogger) -> None:
         logging.exception("spread/depth report failed")
 
 
-def _write_latest_spread_report(config: Config, gap_logger: GapLogger) -> None:
+def _write_latest_spread_report(config: Config, gap_logger: GapLogger, latest_snapshots: LatestSnapshots) -> None:
     try:
-        rows = build_latest_report(config.output_dir)
+        rows = build_latest_report(config.output_dir, snapshots=latest_snapshots)
         output_path = config.output_dir / "latest_spread.csv"
         write_latest_report(rows, output_path)
         logging.info("wrote latest spread report rows=%s path=%s", len(rows), output_path)
