@@ -130,23 +130,27 @@ def _flatten_side(
     if not isinstance(levels, list):
         return ()
 
-    rows: list[OrderBookRow] = []
-    selected_levels = levels[:max_levels] if max_levels > 0 else levels
-    for level, price_size in enumerate(selected_levels):
+    price_sizes: list[tuple[int, int]] = []
+    for price_size in levels:
         if not isinstance(price_size, list | tuple) or len(price_size) < 2:
             raise ValueError(f"Invalid price level for {ticker} {side}: {price_size!r}")
-        rows.append(
-            OrderBookRow(
-                capture_ts_ms=capture_ts_ms,
-                ticker=ticker,
-                side=side,
-                level=level,
-                price=_dollars_to_fixed_units(str(price_size[0])),
-                size=_count_to_fixed_units(str(price_size[1])),
-                snapshot_id=snapshot_id,
-            )
+        price_sizes.append((_dollars_to_fixed_units(str(price_size[0])), _count_to_fixed_units(str(price_size[1]))))
+
+    # Kalshi lists bids ascending by price; level 0 must be the best (highest) bid.
+    price_sizes.sort(key=lambda item: item[0], reverse=True)
+    selected_levels = price_sizes[:max_levels] if max_levels > 0 else price_sizes
+    return tuple(
+        OrderBookRow(
+            capture_ts_ms=capture_ts_ms,
+            ticker=ticker,
+            side=side,
+            level=level,
+            price=price,
+            size=size,
+            snapshot_id=snapshot_id,
         )
-    return tuple(rows)
+        for level, (price, size) in enumerate(selected_levels)
+    )
 
 
 def _dollars_to_fixed_units(value: str) -> int:

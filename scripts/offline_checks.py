@@ -43,12 +43,21 @@ def check_orderbook_flattening() -> None:
             {
                 "ticker": "T1",
                 "orderbook_fp": {
-                    "yes_dollars": [["0.1500", "100.00"], ["0.1400", "25.00"]],
-                    "no_dollars": [["0.8500", "50.00"]],
+                    "yes_dollars": [["0.1300", "5.00"], ["0.1400", "25.00"], ["0.1500", "100.00"]],
+                    "no_dollars": [["0.8400", "7.00"], ["0.8500", "50.00"]],
                 },
             }
         ]
     }
+    # Kalshi returns bid levels ascending by price, so the best bid is the last entry.
+    rows = flatten_orderbook_payload(payload, 1782432000000)
+    assert [(row.side, row.level, row.price, row.size) for row in rows] == [
+        ("yes", 0, 1500, 10000),
+        ("yes", 1, 1400, 2500),
+        ("yes", 2, 1300, 500),
+        ("no", 0, 8500, 5000),
+        ("no", 1, 8400, 700),
+    ]
     rows = flatten_orderbook_payload(payload, 1782432000000, max_levels=1)
     assert [(row.side, row.level, row.price, row.size) for row in rows] == [
         ("yes", 0, 1500, 10000),
