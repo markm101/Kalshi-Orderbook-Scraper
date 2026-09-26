@@ -76,6 +76,7 @@ Implemented behavior:
 - latest-spread CSV refreshed after each capture cycle from in-memory books
 - selected markets kept until they close; re-picks only fill free slots
 - market status checks every `--status-check-seconds`: closed markets stop being polled, are logged as `market_closed`, and their results go to `metadata/results.csv`
+- `--tickers`-only runs stop by themselves once every market has closed, logging `all_markets_closed`
 - heartbeat logs
 - graceful SIGINT/SIGTERM handling
 - `--once` one-cycle capture

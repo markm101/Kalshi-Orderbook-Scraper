@@ -49,6 +49,7 @@ def main() -> None:
     check_capture_keeps_latest_spread_in_memory()
     check_capture_stops_polling_closed_markets()
     check_capture_keeps_picks_until_they_close()
+    check_capture_stops_when_all_markets_close()
     print("offline checks passed")
 
 
@@ -780,6 +781,48 @@ def check_capture_keeps_picks_until_they_close() -> None:
     assert [row["ticker"] for row in _read_csv(output_dir / "metadata" / "results.csv")] == ["B"]
     # Metadata keeps every market captured in the run, including the closed one.
     assert sorted(row["ticker"] for row in _read_csv(output_dir / "metadata" / "markets.csv")) == ["A", "B", "C"]
+
+
+def check_capture_stops_when_all_markets_close() -> None:
+    class FakeClient:
+        def __init__(self) -> None:
+            self.polls = 0
+
+        def get(self, path: str, params=None):
+            if path == "/markets":
+                closed = self.polls >= 2
+                return {
+                    "markets": [
+                        {
+                            "ticker": ticker,
+                            "event_ticker": f"SERIES-{ticker}",
+                            "series_ticker": "SERIES",
+                            "status": "finalized" if closed else "active",
+                            "result": "no" if closed else "",
+                        }
+                        for ticker in params["tickers"].split(",")
+                    ]
+                }
+            if path == "/series/SERIES":
+                return {"series": {"ticker": "SERIES", "category": "Sports"}}
+            if path == "/markets/orderbooks":
+                self.polls += 1
+                return _two_sided_books(tuple(value for key, value in params if key == "tickers"))
+            raise AssertionError(path)
+
+    output_dir = Path(tempfile.mkdtemp())
+    client = FakeClient()
+    # With only --tickers, nothing can replace settled markets, so the run should end on its own.
+    # duration_seconds is only a safety net in case it doesn't.
+    config = _capture_config(output_dir, tickers=("T1", "T2"), status_check_seconds=0.0, duration_seconds=2.0)
+    run_capture(config, client)
+
+    events = [row["event_type"] for row in _read_csv(output_dir / "gaps.csv")]
+    assert events.count("all_markets_closed") == 1, events
+    assert "empty_ticker_set" not in events
+    assert json.loads((output_dir / "run_summary.json").read_text())["errors"] == 0
+    assert client.polls == 2
+    assert sorted(row["ticker"] for row in _read_csv(output_dir / "metadata" / "results.csv")) == ["T1", "T2"]
 
 
 def _capture_config(output_dir: Path, **changes) -> Config:

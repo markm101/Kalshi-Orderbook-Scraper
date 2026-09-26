@@ -79,6 +79,8 @@ def run_capture(
 
         if config.once:
             discovery = _check_market_status(config, client, discovery, tracked, gap_logger)
+            if _stop_when_all_closed(config, discovery, gap_logger):
+                return
             _capture_cycle(config, client, discovery, gap_logger, stats, latest_snapshots)
             _write_latest_spread_report(config, gap_logger, latest_snapshots)
             return
@@ -98,6 +100,8 @@ def run_capture(
                 discovery = _check_market_status(config, client, discovery, tracked, gap_logger)
                 _update_tracked_counts(discovery, stats)
                 next_status_check = time.monotonic() + config.status_check_seconds
+                if _stop_when_all_closed(config, discovery, gap_logger):
+                    break
 
             _capture_cycle(config, client, discovery, gap_logger, stats, latest_snapshots)
             _write_latest_spread_report(config, gap_logger, latest_snapshots)
@@ -185,6 +189,15 @@ def _check_market_status(
             append_market_result(config.output_dir, market_result(market))
             tracked.awaiting_result.discard(ticker)
     return _without_closed(discovery, tracked.closed)
+
+
+def _stop_when_all_closed(config: Config, discovery: DiscoveryResult, gap_logger: GapLogger) -> bool:
+    # Picks and series/category discovery can add markets later; a --tickers list cannot.
+    if discovery.markets or config.select_liquid or config.series or config.categories:
+        return False
+    gap_logger.log("all_markets_closed", "every tracked market has closed; stopping")
+    logging.info("every tracked market has closed; stopping")
+    return True
 
 
 def _without_closed(discovery: DiscoveryResult, closed: set[str]) -> DiscoveryResult:

@@ -167,7 +167,7 @@ Optional selector filters:
 
 The selector skips multivariate combo markets and markets without bids on both YES and NO, then ranks the rest by 24h volume, total volume, open interest, best-level spread, best-level depth, and book rows. It returns up to `--select-liquid` distinct parent events, so ladder markets such as adjacent BTC strikes do not fill the whole selection. Use `--min-close-hours` to exclude markets that are too close to settlement.
 
-Picked markets stay on the list until they close. Re-picks run every `--discovery-refresh-seconds` (default 900) and only fill free slots. Every `--status-check-seconds` (default 60), capture checks the status of each tracked market. A market that has closed stops being polled, gets a `market_closed` row in `gaps.csv`, and its result is appended to `metadata/results.csv` once Kalshi reports it. This applies to markets passed with `--tickers` too.
+Picked markets stay on the list until they close. Re-picks run every `--discovery-refresh-seconds` (default 900) and only fill free slots. Every `--status-check-seconds` (default 60), capture checks the status of each tracked market. A market that has closed stops being polled, gets a `market_closed` row in `gaps.csv`, and its result is appended to `metadata/results.csv` once Kalshi reports it. This applies to markets passed with `--tickers` too. A run with only `--tickers` stops by itself once every market has closed, and logs `all_markets_closed`.
 
 Example filtered selector run:
 
