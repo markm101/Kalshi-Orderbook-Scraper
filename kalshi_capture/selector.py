@@ -10,14 +10,22 @@ from kalshi_capture.discovery import UNKNOWN_CATEGORY
 from kalshi_capture.orderbook import flatten_orderbook_payload
 
 
+# Kalshi now reports these as *_fp decimal strings; plain names are kept as fallbacks.
+VOLUME_FIELDS = ("volume_fp", "volume")
+VOLUME_24H_FIELDS = ("volume_24h_fp", "volume_24h")
+OPEN_INTEREST_FIELDS = ("open_interest_fp", "open_interest")
+
+
 @dataclass(frozen=True)
 class LiquidMarketCandidate:
     ticker: str
     rows: int
     top_level_size: int
+    spread: int | None = None
     group_key: str = ""
     close_ts_ms: int | None = None
     volume: int = 0
+    volume_24h: int = 0
     open_interest: int = 0
 
 
@@ -57,7 +65,7 @@ def select_liquid_tickers(
 
     cursor = ""
     for _ in range(scan_pages):
-        params: dict[str, Any] = {"status": "open", "limit": 100}
+        params: dict[str, Any] = {"status": "open", "limit": 100, "mve_filter": "exclude"}
         if cursor:
             params["cursor"] = cursor
 
@@ -116,6 +124,8 @@ def _add_candidates(
     for chunk in _chunks(tickers, 100):
         orderbook_payload = client.get("/markets/orderbooks", params=[("tickers", ticker) for ticker in chunk])
         for candidate in score_orderbook_payload(orderbook_payload):
+            if candidate.spread is None:
+                continue
             if candidate.rows < min_rows or candidate.top_level_size < min_top_level_size:
                 continue
             market = market_by_ticker.get(candidate.ticker, {})
@@ -123,10 +133,12 @@ def _add_candidates(
                 ticker=candidate.ticker,
                 rows=candidate.rows,
                 top_level_size=candidate.top_level_size,
+                spread=candidate.spread,
                 group_key=_market_group_key(market, candidate.ticker),
                 close_ts_ms=_close_ts_ms(market),
-                volume=_market_number(market, ("volume", "volume_24h", "previous_24_hour_volume")),
-                open_interest=_market_number(market, ("open_interest",)),
+                volume=_market_number(market, VOLUME_FIELDS),
+                volume_24h=_market_number(market, VOLUME_24H_FIELDS),
+                open_interest=_market_number(market, OPEN_INTEREST_FIELDS),
             )
 
 
@@ -150,7 +162,12 @@ def _category_market_batches(
             series_categories[series_ticker] = category
             cursor = ""
             while pages_seen < page_budget:
-                params: dict[str, Any] = {"status": "open", "limit": 100, "series_ticker": series_ticker}
+                params: dict[str, Any] = {
+                    "status": "open",
+                    "limit": 100,
+                    "series_ticker": series_ticker,
+                    "mve_filter": "exclude",
+                }
                 if cursor:
                     params["cursor"] = cursor
                 market_payload = client.get("/markets", params=params)
@@ -177,15 +194,24 @@ def score_orderbook_payload(payload: dict[str, Any]) -> tuple[LiquidMarketCandid
         score["rows"] += 1
         if row.level == 0:
             score["top_level_size"] += row.size
+            score[f"best_{row.side}"] = row.price
 
     return tuple(
         LiquidMarketCandidate(
             ticker=ticker,
             rows=score["rows"],
             top_level_size=score["top_level_size"],
+            spread=_two_sided_spread(score),
         )
         for ticker, score in scores.items()
     )
+
+
+def _two_sided_spread(score: dict[str, int]) -> int | None:
+    # YES ask = 10000 - best NO bid, so spread = YES ask - YES bid.
+    if "best_yes" not in score or "best_no" not in score:
+        return None
+    return 10000 - score["best_no"] - score["best_yes"]
 
 
 def market_passes_filters(
@@ -209,9 +235,9 @@ def market_passes_filters(
 
     if min_close_hours > 0 and not _has_min_close_hours(market, min_close_hours):
         return False
-    if min_volume > 0 and _market_number(market, ("volume", "volume_24h", "previous_24_hour_volume")) < min_volume:
+    if min_volume > 0 and _market_number(market, VOLUME_FIELDS) < min_volume:
         return False
-    if min_open_interest > 0 and _market_number(market, ("open_interest",)) < min_open_interest:
+    if min_open_interest > 0 and _market_number(market, OPEN_INTEREST_FIELDS) < min_open_interest:
         return False
     return True
 
@@ -230,11 +256,14 @@ def _rank_candidates(candidates: tuple[LiquidMarketCandidate, ...], limit: int) 
     return tuple(candidate.ticker for candidate in selected)
 
 
-def _candidate_sort_key(candidate: LiquidMarketCandidate) -> tuple[int, int, int, int, int, str]:
+def _candidate_sort_key(candidate: LiquidMarketCandidate) -> tuple[int, int, int, int, int, int, int, str]:
     close_ts = candidate.close_ts_ms if candidate.close_ts_ms is not None else 0
+    spread = candidate.spread if candidate.spread is not None else 10000
     return (
+        -candidate.volume_24h,
         -candidate.volume,
         -candidate.open_interest,
+        spread,
         -candidate.top_level_size,
         -candidate.rows,
         -close_ts,

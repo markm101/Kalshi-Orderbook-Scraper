@@ -165,7 +165,7 @@ Optional selector filters:
 - `--min-volume 100`: only select markets with at least this reported volume, when available
 - `--min-open-interest 100`: only select markets with at least this reported open interest, when available
 
-The selector ranks all candidates found in the scan, preferring reported volume, open interest, visible top-level depth, and book rows. It returns up to `--select-liquid` distinct parent events, so ladder markets such as adjacent BTC strikes do not fill the whole selection. Use `--min-close-hours` to exclude markets that are too close to settlement.
+The selector skips multivariate combo markets and markets without bids on both YES and NO, then ranks the rest by 24h volume, total volume, open interest, best-level spread, best-level depth, and book rows. It returns up to `--select-liquid` distinct parent events, so ladder markets such as adjacent BTC strikes do not fill the whole selection. Use `--min-close-hours` to exclude markets that are too close to settlement.
 
 Example filtered selector run:
 

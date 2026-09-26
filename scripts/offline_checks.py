@@ -32,6 +32,7 @@ def main() -> None:
     check_liquid_selector_category_seed()
     check_liquid_selector_ranks_beyond_first_match()
     check_liquid_selector_diversifies_events()
+    check_liquid_selector_uses_fp_fields_and_skips_one_sided()
     check_spread_depth_report()
     check_latest_spread_report()
     print("offline checks passed")
@@ -260,8 +261,8 @@ def check_liquid_selector_scoring() -> None:
             {
                 "ticker": "T1",
                 "orderbook_fp": {
-                    "yes_dollars": [["0.1500", "100.00"], ["0.1400", "25.00"]],
-                    "no_dollars": [["0.8500", "50.00"]],
+                    "yes_dollars": [["0.1400", "25.00"], ["0.1500", "100.00"]],
+                    "no_dollars": [["0.8300", "50.00"]],
                 },
             },
             {
@@ -276,8 +277,10 @@ def check_liquid_selector_scoring() -> None:
     scores = {candidate.ticker: candidate for candidate in score_orderbook_payload(payload)}
     assert scores["T1"].rows == 3
     assert scores["T1"].top_level_size == 15000
+    assert scores["T1"].spread == 200
     assert scores["T2"].rows == 1
     assert scores["T2"].top_level_size == 1000
+    assert scores["T2"].spread is None
 
 
 def check_liquid_selector_filters() -> None:
@@ -290,8 +293,8 @@ def check_liquid_selector_filters() -> None:
         "ticker": "T1",
         "event_ticker": "SERIES-TEST",
         "close_time": "2999-01-01T00:00:00Z",
-        "volume": "125",
-        "open_interest": "250",
+        "volume_fp": "125.00",
+        "open_interest_fp": "250.00",
     }
     cache: dict[str, str] = {}
     assert market_passes_filters(
@@ -335,7 +338,7 @@ def check_liquid_selector_category_seed() -> None:
                     "orderbooks": [
                         {
                             "ticker": "T1",
-                            "orderbook_fp": {"yes_dollars": [["0.4500", "10.00"]], "no_dollars": []},
+                            "orderbook_fp": {"yes_dollars": [["0.4500", "10.00"]], "no_dollars": [["0.5000", "10.00"]]},
                         }
                     ]
                 }
@@ -381,7 +384,7 @@ def check_liquid_selector_ranks_beyond_first_match() -> None:
                             "ticker": ticker,
                             "orderbook_fp": {
                                 "yes_dollars": [["0.4500", "10.00" if ticker == "WEAK" else "100.00"]],
-                                "no_dollars": [],
+                                "no_dollars": [["0.5000", "10.00"]],
                             },
                         }
                         for ticker in tickers
@@ -425,7 +428,10 @@ def check_liquid_selector_diversifies_events() -> None:
                     "orderbooks": [
                         {
                             "ticker": ticker,
-                            "orderbook_fp": {"yes_dollars": [["0.4500", top_sizes[ticker]]], "no_dollars": []},
+                            "orderbook_fp": {
+                                "yes_dollars": [["0.4500", top_sizes[ticker]]],
+                                "no_dollars": [["0.5000", "10.00"]],
+                            },
                         }
                         for ticker in tickers
                     ]
@@ -434,6 +440,34 @@ def check_liquid_selector_diversifies_events() -> None:
 
     assert select_liquid_tickers(FakeClient(), 2, scan_pages=1) == ("LADDER-YES-1", "OTHER-YES")
     assert select_liquid_tickers(FakeClient(), 3, scan_pages=1) == ("LADDER-YES-1", "OTHER-YES")
+
+
+def check_liquid_selector_uses_fp_fields_and_skips_one_sided() -> None:
+    class FakeClient:
+        def get(self, path: str, params=None):
+            if path == "/markets":
+                # Multivariate combo markets flood the open-market scan and are never two-sided.
+                assert params["mve_filter"] == "exclude"
+                return {
+                    "markets": [
+                        {"ticker": "DEAD", "event_ticker": "E1", "volume_fp": "900000.00", "volume_24h_fp": "900000.00"},
+                        {"ticker": "QUIET", "event_ticker": "E2", "volume_fp": "5000.00", "volume_24h_fp": "10.00"},
+                        {"ticker": "ACTIVE", "event_ticker": "E3", "volume_fp": "4000.00", "volume_24h_fp": "2500.00"},
+                    ]
+                }
+            if path == "/markets/orderbooks":
+                books = {
+                    # No YES bids at all and a 99c NO bid: not a two-sided market.
+                    "DEAD": {"yes_dollars": [], "no_dollars": [["0.0100", "46010.00"], ["0.9900", "414.06"]]},
+                    "QUIET": {"yes_dollars": [["0.4000", "10.00"]], "no_dollars": [["0.5500", "10.00"]]},
+                    "ACTIVE": {"yes_dollars": [["0.4000", "10.00"]], "no_dollars": [["0.5500", "10.00"]]},
+                }
+                tickers = tuple(value for key, value in params if key == "tickers")
+                return {"orderbooks": [{"ticker": ticker, "orderbook_fp": books[ticker]} for ticker in tickers]}
+            raise AssertionError(path)
+
+    assert select_liquid_tickers(FakeClient(), 3, scan_pages=1) == ("ACTIVE", "QUIET")
+    assert select_liquid_tickers(FakeClient(), 3, scan_pages=1, min_volume=4500) == ("QUIET",)
 
 
 def check_spread_depth_report() -> None:
