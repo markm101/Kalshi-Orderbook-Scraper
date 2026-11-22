@@ -93,6 +93,32 @@ class ReportTest(CaptureTestCase):
         self.assertIn(",yes,0,", (raw_dir / "Z.csv").read_text())
         self.assertFalse((derived_dir / "A.csv").exists())
 
+    def test_derive_sees_through_a_parent_that_does_not_exist_yet(self):
+        path = self.output_dir / "run" / "orderbooks" / "T.csv"
+        path.parent.mkdir(parents=True)
+        text = RAW_HEADER + "1,T,yes,0,4000,100,1:T\n"
+        path.write_text(text)
+        try:
+            derive_capture(self.output_dir / "run", self.output_dir / "new" / ".." / "run")
+        except ValueError:
+            pass
+        self.assertEqual(path.read_text(), text)
+
+    def test_derive_does_not_overwrite_a_different_input_file(self):
+        raw_dir = self.output_dir / "raw" / "orderbooks"
+        derived_dir = self.output_dir / "derived" / "orderbooks"
+        for directory in (raw_dir, derived_dir):
+            directory.mkdir(parents=True)
+        for ticker in "AB":
+            (raw_dir / f"{ticker}.csv").write_text(RAW_HEADER + f"1,{ticker},yes,0,4000,100,1:{ticker}\n")
+        (derived_dir / "A.csv").hardlink_to(raw_dir / "B.csv")
+        original = (raw_dir / "B.csv").read_text()
+        try:
+            derive_capture(raw_dir.parent, derived_dir.parent)
+        except (KeyError, ValueError):
+            pass
+        self.assertEqual((raw_dir / "B.csv").read_text(), original)
+
     @known_bug("a truncated row crashes the report", TypeError)
     def test_truncated_row_is_skipped(self):
         path = self.output_dir / "orderbooks" / "T.csv"
