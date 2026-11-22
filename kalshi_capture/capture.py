@@ -145,7 +145,6 @@ def _discover(config: Config, client: KalshiClient, gap_logger: GapLogger, track
                 keep=keep,
             )
             logging.info("selected liquid tickers=%s", selected)
-            tracked.picked = selected
             tickers = tuple(dict.fromkeys((*tickers, *selected)))
 
         discovery = discover_markets(
@@ -155,6 +154,8 @@ def _discover(config: Config, client: KalshiClient, gap_logger: GapLogger, track
             categories=config.categories,
             exclude_categories=config.exclude_categories,
         )
+        if config.select_liquid:
+            tracked.picked = selected
         return _without_closed(discovery, tracked.closed)
     except Exception as exc:
         gap_logger.log("discovery_error", str(exc))
