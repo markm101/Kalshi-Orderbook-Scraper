@@ -76,7 +76,7 @@ Implemented behavior:
 - latest-spread CSV refreshed after each capture cycle from in-memory books
 - selected markets kept until they close; re-picks only fill free slots
 - market status checks every `--status-check-seconds` move each market between trading (polled), settling (status-checked only), and finalized (terminal), logging `market_closed` and `market_reopened`
-- a market absent from a status response keeps its phase and logs `market_missing` once per absence
+- a market absent from a status response keeps its phase and logs `market_missing` once per absence; after 15 consecutive misses it becomes unavailable (neither polled nor checked) until discovery returns it, logging `market_unavailable`
 - results go to `metadata/results.csv` only at finalization, and markets still settling at shutdown log `result_pending`
 - `--tickers`-only runs stop by themselves once every market found is finalized, logging `all_markets_closed`. They can wait through a dispute, so bound them with `--duration-seconds`
 - failed discovery refreshes keep the current markets; only startup discovery is fatal

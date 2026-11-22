@@ -175,10 +175,10 @@ Every `--status-check-seconds` (default 60), capture checks each tracked market 
 
 - A market that is closed, determined, disputed, amended, or finalized stops being polled and gets a `market_closed` row in `gaps.csv`.
 - A market that Kalshi reopens is polled again and gets a `market_reopened` row.
-- A market left out of a status response keeps its state and gets one `market_missing` row each time it goes missing.
+- A market left out of a status response keeps its state and gets one `market_missing` row each time it goes missing. After 15 consecutive misses, capture stops watching it and logs `market_unavailable`. Discovery can pick it up again.
 - A result is appended to `metadata/results.csv` only when the market is finalized. A market still waiting for that at shutdown gets a `result_pending` row.
 
-A run with only `--tickers` stops by itself once every market it found is finalized, and logs `all_markets_closed`. It can wait through a dispute, so use `--duration-seconds` to bound it.
+A run with only `--tickers` stops by itself once every market it found is finalized, and logs `all_markets_closed`. If some of those markets became unavailable instead, it logs `markets_unavailable`. It can wait through a dispute, so use `--duration-seconds` to bound it.
 
 Example filtered selector run:
 
@@ -268,7 +268,7 @@ exports/short_capture/
   spread_depth.csv
 ```
 
-Each ticker gets its own CSV under `orderbooks/`. Category is stored in `metadata/series.csv`, not in every order book row. `metadata/markets.csv` keeps every market captured during the run, including ones that have closed. `metadata/results.csv` has one row per finalized market: `ticker,event_ticker,status,result,settlement_value,close_time,settlement_ts`, with `settlement_value` in the same fixed units as prices.
+Each ticker gets its own CSV under `orderbooks/`. Category is stored in `metadata/series.csv`, not in every order book row. `metadata/markets.csv` keeps every market captured during the run, including ones that have closed. `metadata/results.csv` has one row per finalized market for each run: `ticker,event_ticker,status,result,settlement_value,close_time,settlement_ts`, with `settlement_value` in the same fixed units as prices.
 
 ## Order Book CSV
 

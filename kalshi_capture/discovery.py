@@ -17,6 +17,7 @@ class MarketPhase(Enum):
     TRADING = "trading"
     SETTLING = "settling"
     FINALIZED = "finalized"
+    UNAVAILABLE = "unavailable"
 
 
 # A closed market can reopen, and a result can be disputed or amended until it is finalized.

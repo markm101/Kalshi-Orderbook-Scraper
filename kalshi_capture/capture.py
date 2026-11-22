@@ -33,6 +33,10 @@ from kalshi_capture.spread_depth import (
 from kalshi_capture.storage import append_market_result, write_metadata, write_orderbook_rows
 
 
+# Kalshi can remove a provisional market for good, so absence cannot be waited out forever.
+MAX_MISSED_STATUS_CHECKS = 15
+
+
 @dataclass
 class CaptureStats:
     started_ts_ms: int = 0
@@ -53,10 +57,12 @@ class TrackedMarket:
     # Only status checks set these. Discovery's copy of the status can be stale.
     status: str = ""
     result: str = ""
-    missing: bool = False
+    missed_checks: int = 0
 
     @property
     def phase(self) -> MarketPhase:
+        if self.missed_checks >= MAX_MISSED_STATUS_CHECKS:
+            return MarketPhase.UNAVAILABLE
         return market_phase(self.status)
 
 
@@ -69,7 +75,10 @@ class TrackedMarkets:
 
     def add(self, discovery: DiscoveryResult) -> None:
         for metadata in discovery.markets:
-            self.markets.setdefault(metadata.ticker, TrackedMarket(metadata)).metadata = metadata
+            market = self.markets.setdefault(metadata.ticker, TrackedMarket(metadata))
+            market.metadata = metadata
+            if market.phase is MarketPhase.UNAVAILABLE:
+                market.missed_checks = 0
         self.series.update((item.series_ticker, item) for item in discovery.series)
 
     def in_phase(self, *phases: MarketPhase) -> dict[str, TrackedMarket]:
@@ -145,7 +154,8 @@ def run_capture(
             _sleep_interruptibly(max(0.0, config.interval - elapsed), should_stop, stop_at)
     finally:
         stats.ended_ts_ms = int(time.time() * 1000)
-        _update_tracked_counts(tracked.polled(), stats)
+        stats.tracked_tickers = len(tracked.in_phase(MarketPhase.TRADING))
+        stats.tracked_categories = len({item.sanitized_category for item in tracked.series.values()})
         _write_run_summary(config, stats)
         _log_pending_results(tracked, gap_logger)
         _write_spread_depth_report(config, gap_logger)
@@ -156,10 +166,11 @@ def run_capture(
 def _discover(config: Config, client: KalshiClient, gap_logger: GapLogger, tracked: TrackedMarkets) -> None:
     try:
         not_trading = tracked.in_phase(MarketPhase.SETTLING, MarketPhase.FINALIZED)
+        unavailable = tracked.in_phase(MarketPhase.UNAVAILABLE)
         tickers = config.tickers
         if config.select_liquid:
             # Picks stay until they close; the selector only fills free slots.
-            keep = tuple(ticker for ticker in tracked.picked if ticker not in not_trading)
+            keep = tuple(ticker for ticker in tracked.picked if ticker not in not_trading and ticker not in unavailable)
             selected = select_liquid_tickers(
                 client,
                 limit=config.select_liquid,
@@ -210,12 +221,16 @@ def _check_market_status(
     for ticker, market in watched.items():
         item = latest.get(ticker)
         if item is None:
-            if not market.missing:
-                market.missing = True
+            market.missed_checks += 1
+            if market.missed_checks == 1:
                 gap_logger.log("market_missing", "ticker absent from successful status response", ticker=ticker)
                 logging.warning("market missing from status check ticker=%s", ticker)
+            if market.phase is MarketPhase.UNAVAILABLE:
+                detail = f"status={market.status} result={market.result or 'pending'} missed_checks={market.missed_checks}"
+                gap_logger.log("market_unavailable", detail, ticker=ticker)
+                logging.warning("stopped watching unavailable market ticker=%s", ticker)
             continue
-        market.missing = False
+        market.missed_checks = 0
         previous = market.phase
         market.status = str(item.get("status") or "")
         market.result = str(item.get("result") or "")
@@ -239,13 +254,19 @@ def _stop_when_all_finalized(config: Config, tracked: TrackedMarkets, gap_logger
         return False
     if tracked.in_phase(MarketPhase.TRADING, MarketPhase.SETTLING):
         return False
-    gap_logger.log("all_markets_closed", "every tracked market is finalized; stopping")
-    logging.info("every tracked market is finalized; stopping")
+    if tracked.in_phase(MarketPhase.UNAVAILABLE):
+        event, detail = "markets_unavailable", "every tracked market is finalized or unavailable; stopping"
+    else:
+        event, detail = "all_markets_closed", "every tracked market is finalized; stopping"
+    gap_logger.log(event, detail)
+    logging.info(detail)
     return True
 
 
 def _log_pending_results(tracked: TrackedMarkets, gap_logger: GapLogger) -> None:
-    for ticker, market in tracked.in_phase(MarketPhase.SETTLING).items():
+    for ticker, market in tracked.markets.items():
+        if market_phase(market.status) is not MarketPhase.SETTLING:
+            continue
         gap_logger.log("result_pending", f"status={market.status} result={market.result or 'pending'}", ticker=ticker)
 
 
@@ -340,11 +361,6 @@ def _log_heartbeat(discovery: DiscoveryResult, stats: CaptureStats) -> None:
         stats.missing_tickers,
         stats.zero_row_batches,
     )
-
-
-def _update_tracked_counts(discovery: DiscoveryResult, stats: CaptureStats) -> None:
-    stats.tracked_tickers = len(discovery.markets)
-    stats.tracked_categories = len({item.sanitized_category for item in discovery.series})
 
 
 def _write_run_summary(config: Config, stats: CaptureStats) -> None:
