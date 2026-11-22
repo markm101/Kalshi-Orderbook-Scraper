@@ -34,10 +34,17 @@ def derive_rows(raw_row: dict[str, str]):
 
 
 def derive_capture(input_dir: Path, output_dir: Path) -> int:
+    paths = [
+        (input_path, output_dir / input_path.relative_to(input_dir))
+        for input_path in sorted((input_dir / "orderbooks").glob("*.csv"))
+    ]
+    for input_path, output_path in paths:
+        if output_path.exists() and output_path.samefile(input_path):
+            raise ValueError(f"output would overwrite input: {input_path}")
+
     rows_written = 0
     _copy_metadata(input_dir, output_dir)
-    for input_path in sorted((input_dir / "orderbooks").glob("*.csv")):
-        output_path = output_dir / input_path.relative_to(input_dir)
+    for input_path, output_path in paths:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with input_path.open(newline="") as input_file, output_path.open("w", newline="") as output_file:
             reader = csv.DictReader(input_file)
@@ -64,8 +71,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    args = build_parser().parse_args()
-    rows_written = derive_capture(args.input_dir, args.output_dir)
+    parser = build_parser()
+    args = parser.parse_args()
+    try:
+        rows_written = derive_capture(args.input_dir, args.output_dir)
+    except ValueError as exc:
+        parser.error(str(exc))
     print(f"derived_rows_written: {rows_written}")
     return 0
 
