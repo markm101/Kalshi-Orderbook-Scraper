@@ -1,3 +1,5 @@
+import json
+
 from tests.support import CaptureTestCase, Exchange, capture, gap_events, known_bug, market, read_csv, run_errors
 
 
@@ -192,6 +194,83 @@ class LifecycleTest(CaptureTestCase):
         exchange = Exchange(market("A", status="inactive"), market("B", status="a_future_status"))
         capture(exchange, self.output_dir, after_polls("A", 4), tickers=("A", "B"))
         self.assertGreaterEqual(exchange.polls["B"], 4)
+
+    def test_permanently_omitted_market_stops_being_watched(self):
+        steps = ((after_polls("B", 3), lambda exchange: exchange.markets.pop("A")),)
+        exchange = Exchange(market("A"), market("B"))
+        capture(exchange, self.output_dir, after_polls("B", 40), steps, tickers=("A", "B"))
+        self.assertLess(exchange.polls["A"], 25)
+        self.assertEqual([row["ticker"] for row in self.gaps("market_unavailable")], ["A"])
+
+    def test_run_ends_without_claiming_a_close_when_its_market_disappears(self):
+        steps = ((after_polls("A", 2), lambda exchange: exchange.markets.pop("A")),)
+        capture(Exchange(market("A")), self.output_dir, steps=steps, tickers=("A",), duration_seconds=2)
+        events = gap_events(self.output_dir)
+        self.assertIn("markets_unavailable", events)
+        self.assertNotIn("all_markets_closed", events)
+        self.assertEqual(run_errors(self.output_dir), 0)
+
+    def test_disappeared_closed_market_reports_its_pending_result(self):
+        steps = (
+            (after_polls("A", 2), change("A", status="determined", result="yes")),
+            (after_seen("A", "determined"), lambda exchange: exchange.markets.pop("A")),
+        )
+        capture(Exchange(market("A")), self.output_dir, steps=steps, tickers=("A",), duration_seconds=2)
+        self.assertIn("markets_unavailable", gap_events(self.output_dir))
+        self.assertIn("result=yes", self.gaps("result_pending")[0]["detail"])
+
+    def test_unavailable_market_is_captured_when_discovery_finds_it_again(self):
+        hidden = market("A")
+        steps = (
+            (after_polls("B", 3), lambda exchange: exchange.markets.pop("A")),
+            (after_polls("B", 30), lambda exchange: exchange.markets.update(A=hidden)),
+        )
+        exchange = Exchange(market("A"), market("B"))
+        capture(exchange, self.output_dir, after_polls("B", 45), steps, tickers=("A", "B"), discovery_refresh_seconds=0)
+        self.assertGreater(exchange.polls["A"], 25)
+
+    def test_series_and_category_runs_do_not_stop_by_themselves(self):
+        for option in ({"series": ("S",)}, {"categories": ("Sports",)}):
+            output_dir = self.output_dir / next(iter(option))
+            steps = (
+                (after_polls("A", 2), change("A", status="finalized", result="yes")),
+                (after_seen("A", "finalized"), lambda exchange: exchange.markets.update(B=market("B"))),
+            )
+            exchange = Exchange(market("A"))
+            capture(exchange, output_dir, after_polls("B", 2), steps, discovery_refresh_seconds=0, **option)
+            self.assertGreaterEqual(exchange.polls["B"], 2)
+
+    def test_reopened_pick_takes_its_slot_again(self):
+        exchange = Exchange(market("A", volume_24h_fp="300"), market("C", volume_24h_fp="200"))
+        steps = (
+            (after_polls("A", 4), change("A", status="closed")),
+            (after_polls("C", 4), change("A", status="active")),
+            (after_polls("A", 8), lambda ex: ex.markets.update(D=market("D", volume_24h_fp="900"))),
+            (after_polls("A", 10), change("C", status="closed")),
+        )
+        capture(exchange, self.output_dir, after_polls("A", 18), steps, select_liquid=1, discovery_refresh_seconds=0)
+        self.assertFalse((self.output_dir / "orderbooks" / "D.csv").exists())
+
+    def test_status_checks_follow_their_interval(self):
+        exchange = Exchange(market("A"))
+        capture(exchange, self.output_dir, after_polls("A", 6), tickers=("A",), status_check_seconds=999)
+        self.assertEqual(exchange.served["A", "active"], 2)
+
+    def test_settled_status_is_final(self):
+        capture(Exchange(market("A", status="settled", result="yes")), self.output_dir, tickers=("A",), once=True)
+        self.assertEqual(self.results(), [("A", "settled", "yes")])
+        self.assertEqual(self.gaps("result_pending"), [])
+
+    def test_summary_and_category_survive_the_auto_stop(self):
+        steps = ((after_polls("A", 2), change("A", status="finalized", result="yes")),)
+        capture(Exchange(market("A")), self.output_dir, steps=steps, tickers=("A",))
+        summary = json.loads((self.output_dir / "run_summary.json").read_text())
+        self.assertEqual(summary["tracked_categories"], 1)
+        self.assertEqual(read_csv(self.output_dir / "latest_spread.csv")[0]["category"], "Sports")
+
+    def test_summary_counts_polled_markets(self):
+        capture(Exchange(market("A"), market("B")), self.output_dir, tickers=("A", "B"), once=True)
+        self.assertEqual(json.loads((self.output_dir / "run_summary.json").read_text())["tracked_tickers"], 2)
 
     @known_bug("markets.csv keeps a closed market as active")
     def test_metadata_follows_the_close(self):
