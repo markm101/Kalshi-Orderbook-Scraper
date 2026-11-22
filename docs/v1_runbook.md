@@ -162,7 +162,11 @@ heartbeat-seconds: 300
 discovery-refresh-seconds: 900
 ```
 
-The selector scans a candidate pool, skips multivariate combo markets and markets without bids on both YES and NO, and ranks the rest by 24h volume, total volume, open interest, best-level spread, best-level depth, and book rows. It returns up to the requested count while keeping one market per parent event, so one event ladder does not fill the whole selection. Picked markets stay on the list until they close; re-picks only fill free slots. Closed markets stop being polled, are logged as `market_closed` in `gaps.csv`, and their results go to `metadata/results.csv`. Category selection uses `--liquid-scan-pages` as a search-depth knob across matching series, not as an instruction to stop at the first markets with visible rows.
+The selector scans a candidate pool, skips multivariate combo markets and markets without bids on both YES and NO, and ranks the rest by 24h volume, total volume, open interest, best-level spread, best-level depth, and book rows. It returns up to the requested count while keeping one market per parent event, so one event ladder does not fill the whole selection. Picked markets hold their slot until they close. Re-picks only fill free slots. Category selection uses `--liquid-scan-pages` as a search-depth knob across matching series, not as an instruction to stop at the first markets with visible rows.
+
+Closed markets stop being polled and are logged as `market_closed` in `gaps.csv`. Reopened markets are polled again and logged as `market_reopened`. A market left out of a status response is logged as `market_missing` and keeps its state. After 15 consecutive misses it is logged as `market_unavailable` and no longer watched. Results go to `metadata/results.csv` only at finalization. A market still waiting for that at shutdown is logged as `result_pending`.
+
+A run with only `--tickers` stops when every market it found is finalized or unavailable. It can wait through a dispute, so use `--duration-seconds` to bound it.
 
 If rows are sparse, lower category restrictions or use a broader selector. If rate limits appear, reduce selected markets or increase `--interval`.
 
