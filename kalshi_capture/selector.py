@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+import logging
 from typing import Any
 
 from kalshi_capture.client import KalshiClient
@@ -158,9 +159,11 @@ def _category_market_batches(
         series_payload = client.get("/series", params={"category": category, "include_product_metadata": "true"})
         series_tickers = tuple(
             str(item.get("ticker"))
-            for item in series_payload.get("series", [])
+            for item in series_payload.get("series") or []
             if isinstance(item, dict) and item.get("ticker")
         )
+        if not series_tickers:
+            logging.warning("no series matched category=%r; names are case-sensitive", category)
         for series_ticker in series_tickers:
             series_categories[series_ticker] = category
             cursor = ""

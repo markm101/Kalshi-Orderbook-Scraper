@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -153,7 +154,10 @@ def _fetch_series_for_categories(
     series_by_ticker: dict[str, SeriesMetadata] = {}
     for category in categories:
         payload = client.get("/series", params={"category": category, "include_product_metadata": "true"})
-        for item in payload.get("series", []):
+        series_items = payload.get("series") or []
+        if not series_items:
+            logging.warning("no series matched category=%r; names are case-sensitive", category)
+        for item in series_items:
             if not isinstance(item, dict):
                 continue
             metadata = _series_metadata(item)
