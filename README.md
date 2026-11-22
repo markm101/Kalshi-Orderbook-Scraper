@@ -374,7 +374,10 @@ Run checks that do not call Kalshi:
 
 ```bash
 python scripts/offline_checks.py
+python -m unittest
 ```
+
+`python -m unittest` reports each unfixed known bug as skipped. When you fix one, its test fails until you remove its `@known_bug` line.
 
 ## Important Files
 

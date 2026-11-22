@@ -254,7 +254,10 @@ Offline checks, no API calls:
 
 ```bash
 python scripts/offline_checks.py
+python -m unittest
 ```
+
+Unfixed bugs have tests marked `@known_bug`, which report as skipped. Remove the marker in the change that fixes the bug.
 
 Auth smoke test, read-only:
 
