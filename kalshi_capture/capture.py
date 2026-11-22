@@ -92,9 +92,14 @@ def run_capture(
         while not should_stop() and not _duration_elapsed(stop_at):
             cycle_start = time.monotonic()
             if time.monotonic() >= next_discovery_refresh:
-                discovery = _discover(config, client, gap_logger, tracked)
-                _update_tracked_counts(discovery, stats)
-                _write_metadata(config, discovery, tracked)
+                try:
+                    discovery = _discover(config, client, gap_logger, tracked)
+                except Exception:
+                    stats.errors += 1
+                    logging.exception("discovery refresh failed; keeping the current markets")
+                else:
+                    _update_tracked_counts(discovery, stats)
+                    _write_metadata(config, discovery, tracked)
                 next_discovery_refresh = time.monotonic() + config.discovery_refresh_seconds
             if time.monotonic() >= next_status_check:
                 discovery = _check_market_status(config, client, discovery, tracked, gap_logger)
@@ -140,7 +145,6 @@ def _discover(config: Config, client: KalshiClient, gap_logger: GapLogger, track
                 keep=keep,
             )
             logging.info("selected liquid tickers=%s", selected)
-            tracked.picked = selected
             tickers = tuple(dict.fromkeys((*tickers, *selected)))
 
         discovery = discover_markets(
@@ -150,6 +154,8 @@ def _discover(config: Config, client: KalshiClient, gap_logger: GapLogger, track
             categories=config.categories,
             exclude_categories=config.exclude_categories,
         )
+        if config.select_liquid:
+            tracked.picked = selected
         return _without_closed(discovery, tracked.closed)
     except Exception as exc:
         gap_logger.log("discovery_error", str(exc))
