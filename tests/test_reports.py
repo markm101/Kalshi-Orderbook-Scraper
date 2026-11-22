@@ -69,7 +69,6 @@ class ReportTest(CaptureTestCase):
             self.assertEqual(derive_capture(output_dir, derived_dir), 2 * row_count)
             self.assertEqual(build_report(derived_dir), report)
 
-    @known_bug("deriving into the input directory truncates the raw CSVs")
     def test_derive_never_overwrites_its_input(self):
         path = self.output_dir / "orderbooks" / "T.csv"
         path.parent.mkdir()
@@ -80,6 +79,19 @@ class ReportTest(CaptureTestCase):
         except ValueError:
             pass
         self.assertEqual(path.read_text(), text)
+
+    def test_derive_checks_every_alias_before_writing_anything(self):
+        raw_dir = self.output_dir / "raw" / "orderbooks"
+        derived_dir = self.output_dir / "derived" / "orderbooks"
+        for directory in (raw_dir, derived_dir):
+            directory.mkdir(parents=True)
+        for ticker in "AZ":
+            (raw_dir / f"{ticker}.csv").write_text(RAW_HEADER + f"1,{ticker},yes,0,4000,100,1:{ticker}\n")
+        (derived_dir / "Z.csv").hardlink_to(raw_dir / "Z.csv")
+        with self.assertRaises(ValueError):
+            derive_capture(raw_dir.parent, derived_dir.parent)
+        self.assertIn(",yes,0,", (raw_dir / "Z.csv").read_text())
+        self.assertFalse((derived_dir / "A.csv").exists())
 
     @known_bug("a truncated row crashes the report", TypeError)
     def test_truncated_row_is_skipped(self):
