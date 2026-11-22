@@ -77,6 +77,7 @@ Implemented behavior:
 - selected markets kept until they close; re-picks only fill free slots
 - market status checks every `--status-check-seconds`: closed markets stop being polled, are logged as `market_closed`, and their results go to `metadata/results.csv`
 - `--tickers`-only runs stop by themselves once every market has closed, logging `all_markets_closed`
+- failed discovery refreshes keep the current markets; only startup discovery is fatal
 - heartbeat logs
 - graceful SIGINT/SIGTERM handling
 - `--once` one-cycle capture
