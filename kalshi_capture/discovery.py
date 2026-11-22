@@ -4,14 +4,35 @@ import logging
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
+from enum import Enum
 from typing import Any
 
 from kalshi_capture.client import KalshiClient
 
 
 UNKNOWN_CATEGORY = "Unknown"
-# Trading has stopped in these states; "determined" and "finalized" also carry the result.
-CLOSED_MARKET_STATUSES = frozenset({"closed", "determined", "finalized", "settled"})
+
+
+class MarketPhase(Enum):
+    TRADING = "trading"
+    SETTLING = "settling"
+    FINALIZED = "finalized"
+
+
+# A closed market can reopen, and a result can be disputed or amended until it is finalized.
+_PHASE_BY_STATUS = {
+    "closed": MarketPhase.SETTLING,
+    "determined": MarketPhase.SETTLING,
+    "disputed": MarketPhase.SETTLING,
+    "amended": MarketPhase.SETTLING,
+    "finalized": MarketPhase.FINALIZED,
+    "settled": MarketPhase.FINALIZED,
+}
+
+
+def market_phase(status: str) -> MarketPhase:
+    # An unknown status is polled, because a book that was not captured cannot be recovered later.
+    return _PHASE_BY_STATUS.get(status, MarketPhase.TRADING)
 
 
 @dataclass(frozen=True)

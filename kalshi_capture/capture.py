@@ -11,12 +11,13 @@ import httpx
 from kalshi_capture.client import KalshiClient
 from kalshi_capture.config import Config
 from kalshi_capture.discovery import (
-    CLOSED_MARKET_STATUSES,
     DiscoveryResult,
     MarketMetadata,
+    MarketPhase,
     SeriesMetadata,
     discover_markets,
     fetch_markets_by_ticker,
+    market_phase,
     market_result,
 )
 from kalshi_capture.gaps import GapLogger
@@ -47,12 +48,40 @@ class CaptureStats:
 
 
 @dataclass
+class TrackedMarket:
+    metadata: MarketMetadata
+    # Only status checks set these. Discovery's copy of the status can be stale.
+    status: str = ""
+    result: str = ""
+    missing: bool = False
+
+    @property
+    def phase(self) -> MarketPhase:
+        return market_phase(self.status)
+
+
+@dataclass
 class TrackedMarkets:
+    # Every pick of the run, so a reopened one takes up a slot again.
     picked: tuple[str, ...] = ()
-    closed: set[str] = field(default_factory=set)
-    awaiting_result: set[str] = field(default_factory=set)
-    markets: dict[str, MarketMetadata] = field(default_factory=dict)
+    markets: dict[str, TrackedMarket] = field(default_factory=dict)
     series: dict[str, SeriesMetadata] = field(default_factory=dict)
+
+    def add(self, discovery: DiscoveryResult) -> None:
+        for metadata in discovery.markets:
+            self.markets.setdefault(metadata.ticker, TrackedMarket(metadata)).metadata = metadata
+        self.series.update((item.series_ticker, item) for item in discovery.series)
+
+    def in_phase(self, *phases: MarketPhase) -> dict[str, TrackedMarket]:
+        return {ticker: market for ticker, market in self.markets.items() if market.phase in phases}
+
+    def polled(self) -> DiscoveryResult:
+        markets = tuple(market.metadata for market in self.in_phase(MarketPhase.TRADING).values())
+        series_tickers = {market.series_ticker for market in markets}
+        return DiscoveryResult(
+            markets=markets,
+            series=tuple(item for item in self.series.values() if item.series_ticker in series_tickers),
+        )
 
 
 def run_capture(
@@ -68,20 +97,19 @@ def run_capture(
     gap_logger.log("startup", "capture started")
 
     try:
-        discovery = _discover(config, client, gap_logger, tracked)
-        if not discovery.markets:
+        _discover(config, client, gap_logger, tracked)
+        if not tracked.markets:
             gap_logger.log("empty_ticker_set", "no markets matched discovery filters")
             logging.warning("no markets matched discovery filters")
             return
 
-        _update_tracked_counts(discovery, stats)
-        _write_metadata(config, discovery, tracked)
+        _write_metadata(config, tracked)
 
         if config.once:
-            discovery = _check_market_status(config, client, discovery, tracked, gap_logger)
-            if _stop_when_all_closed(config, discovery, gap_logger):
+            _check_market_status(config, client, tracked, gap_logger)
+            if _stop_when_all_finalized(config, tracked, gap_logger):
                 return
-            _capture_cycle(config, client, discovery, gap_logger, stats, latest_snapshots)
+            _capture_cycle(config, client, tracked, gap_logger, stats, latest_snapshots)
             _write_latest_spread_report(config, gap_logger, latest_snapshots)
             return
 
@@ -93,44 +121,45 @@ def run_capture(
             cycle_start = time.monotonic()
             if time.monotonic() >= next_discovery_refresh:
                 try:
-                    discovery = _discover(config, client, gap_logger, tracked)
+                    _discover(config, client, gap_logger, tracked)
                 except Exception:
                     stats.errors += 1
                     logging.exception("discovery refresh failed; keeping the current markets")
                 else:
-                    _update_tracked_counts(discovery, stats)
-                    _write_metadata(config, discovery, tracked)
+                    _write_metadata(config, tracked)
                 next_discovery_refresh = time.monotonic() + config.discovery_refresh_seconds
             if time.monotonic() >= next_status_check:
-                discovery = _check_market_status(config, client, discovery, tracked, gap_logger)
-                _update_tracked_counts(discovery, stats)
+                _check_market_status(config, client, tracked, gap_logger)
                 next_status_check = time.monotonic() + config.status_check_seconds
-                if _stop_when_all_closed(config, discovery, gap_logger):
+                if _stop_when_all_finalized(config, tracked, gap_logger):
                     break
 
-            _capture_cycle(config, client, discovery, gap_logger, stats, latest_snapshots)
+            _capture_cycle(config, client, tracked, gap_logger, stats, latest_snapshots)
             _write_latest_spread_report(config, gap_logger, latest_snapshots)
 
             if time.monotonic() >= next_heartbeat:
-                _log_heartbeat(discovery, stats)
+                _log_heartbeat(tracked.polled(), stats)
                 next_heartbeat = time.monotonic() + config.heartbeat_seconds
 
             elapsed = time.monotonic() - cycle_start
             _sleep_interruptibly(max(0.0, config.interval - elapsed), should_stop, stop_at)
     finally:
         stats.ended_ts_ms = int(time.time() * 1000)
+        _update_tracked_counts(tracked.polled(), stats)
         _write_run_summary(config, stats)
+        _log_pending_results(tracked, gap_logger)
         _write_spread_depth_report(config, gap_logger)
         _write_latest_spread_report(config, gap_logger, latest_snapshots)
         gap_logger.log("shutdown", "capture stopped")
 
 
-def _discover(config: Config, client: KalshiClient, gap_logger: GapLogger, tracked: TrackedMarkets) -> DiscoveryResult:
+def _discover(config: Config, client: KalshiClient, gap_logger: GapLogger, tracked: TrackedMarkets) -> None:
     try:
+        not_trading = tracked.in_phase(MarketPhase.SETTLING, MarketPhase.FINALIZED)
         tickers = config.tickers
         if config.select_liquid:
             # Picks stay until they close; the selector only fills free slots.
-            keep = tuple(ticker for ticker in tracked.picked if ticker not in tracked.closed)
+            keep = tuple(ticker for ticker in tracked.picked if ticker not in not_trading)
             selected = select_liquid_tickers(
                 client,
                 limit=config.select_liquid,
@@ -149,14 +178,14 @@ def _discover(config: Config, client: KalshiClient, gap_logger: GapLogger, track
 
         discovery = discover_markets(
             client,
-            tickers=tuple(ticker for ticker in tickers if ticker not in tracked.closed),
+            tickers=tuple(ticker for ticker in tickers if ticker not in not_trading),
             series=config.series,
             categories=config.categories,
             exclude_categories=config.exclude_categories,
         )
         if config.select_liquid:
-            tracked.picked = selected
-        return _without_closed(discovery, tracked.closed)
+            tracked.picked = tuple(dict.fromkeys((*tracked.picked, *selected)))
+        tracked.add(discovery)
     except Exception as exc:
         gap_logger.log("discovery_error", str(exc))
         raise
@@ -165,79 +194,88 @@ def _discover(config: Config, client: KalshiClient, gap_logger: GapLogger, track
 def _check_market_status(
     config: Config,
     client: KalshiClient,
-    discovery: DiscoveryResult,
     tracked: TrackedMarkets,
     gap_logger: GapLogger,
-) -> DiscoveryResult:
-    tickers = tuple(dict.fromkeys((*(market.ticker for market in discovery.markets), *sorted(tracked.awaiting_result))))
-    if not tickers:
-        return discovery
+) -> None:
+    watched = tracked.in_phase(MarketPhase.TRADING, MarketPhase.SETTLING)
+    if not watched:
+        return
     try:
-        markets = fetch_markets_by_ticker(client, tickers)
+        latest = fetch_markets_by_ticker(client, tuple(watched))
     except Exception as exc:
         gap_logger.log("status_check_error", str(exc))
         logging.warning("market status check failed error=%s", exc)
-        return discovery
+        return
 
-    for ticker in tickers:
-        market = markets.get(ticker)
-        if market is None:
+    for ticker, market in watched.items():
+        item = latest.get(ticker)
+        if item is None:
+            if not market.missing:
+                market.missing = True
+                gap_logger.log("market_missing", "ticker absent from successful status response", ticker=ticker)
+                logging.warning("market missing from status check ticker=%s", ticker)
             continue
-        status = str(market.get("status") or "")
-        result = str(market.get("result") or "")
-        if ticker not in tracked.closed and status in CLOSED_MARKET_STATUSES:
-            tracked.closed.add(ticker)
-            tracked.awaiting_result.add(ticker)
-            detail = f"status={status} result={result or 'pending'} close_time={market.get('close_time') or ''}"
+        market.missing = False
+        previous = market.phase
+        market.status = str(item.get("status") or "")
+        market.result = str(item.get("result") or "")
+        if market.phase is previous:
+            continue
+
+        detail = f"status={market.status} result={market.result or 'pending'} close_time={item.get('close_time') or ''}"
+        if previous is MarketPhase.TRADING:
             gap_logger.log("market_closed", detail, ticker=ticker)
             logging.info("market closed ticker=%s %s", ticker, detail)
-        if ticker in tracked.awaiting_result and result:
-            append_market_result(config.output_dir, market_result(market))
-            tracked.awaiting_result.discard(ticker)
-    return _without_closed(discovery, tracked.closed)
+        elif market.phase is MarketPhase.TRADING:
+            gap_logger.log("market_reopened", detail, ticker=ticker)
+            logging.info("market reopened ticker=%s %s", ticker, detail)
+        if market.phase is MarketPhase.FINALIZED:
+            append_market_result(config.output_dir, market_result(item))
 
 
-def _stop_when_all_closed(config: Config, discovery: DiscoveryResult, gap_logger: GapLogger) -> bool:
+def _stop_when_all_finalized(config: Config, tracked: TrackedMarkets, gap_logger: GapLogger) -> bool:
     # Picks and series/category discovery can add markets later; a --tickers list cannot.
-    if discovery.markets or config.select_liquid or config.series or config.categories:
+    if config.select_liquid or config.series or config.categories:
         return False
-    gap_logger.log("all_markets_closed", "every tracked market has closed; stopping")
-    logging.info("every tracked market has closed; stopping")
+    if tracked.in_phase(MarketPhase.TRADING, MarketPhase.SETTLING):
+        return False
+    gap_logger.log("all_markets_closed", "every tracked market is finalized; stopping")
+    logging.info("every tracked market is finalized; stopping")
     return True
 
 
-def _without_closed(discovery: DiscoveryResult, closed: set[str]) -> DiscoveryResult:
-    if not closed:
-        return discovery
-    return DiscoveryResult(
-        markets=tuple(market for market in discovery.markets if market.ticker not in closed),
-        series=discovery.series,
-    )
+def _log_pending_results(tracked: TrackedMarkets, gap_logger: GapLogger) -> None:
+    for ticker, market in tracked.in_phase(MarketPhase.SETTLING).items():
+        gap_logger.log("result_pending", f"status={market.status} result={market.result or 'pending'}", ticker=ticker)
 
 
-def _write_metadata(config: Config, discovery: DiscoveryResult, tracked: TrackedMarkets) -> None:
+def _write_metadata(config: Config, tracked: TrackedMarkets) -> None:
     # Keep every market seen during the run, so closed markets keep their metadata.
-    tracked.markets.update((market.ticker, market) for market in discovery.markets)
-    tracked.series.update((item.series_ticker, item) for item in discovery.series)
     write_metadata(
         config.output_dir,
-        DiscoveryResult(markets=tuple(tracked.markets.values()), series=tuple(tracked.series.values())),
+        DiscoveryResult(
+            markets=tuple(market.metadata for market in tracked.markets.values()),
+            series=tuple(tracked.series.values()),
+        ),
     )
 
 
 def _capture_cycle(
     config: Config,
     client: KalshiClient,
-    discovery: DiscoveryResult,
+    tracked: TrackedMarkets,
     gap_logger: GapLogger,
     stats: CaptureStats,
     latest_snapshots: LatestSnapshots,
 ) -> None:
-    tickers = tuple(market.ticker for market in discovery.markets if market.ticker)
-    categories = discovery.ticker_categories
+    polled = tracked.polled()
+    tickers = tuple(market.ticker for market in polled.markets)
+    categories = polled.ticker_categories
     capture_ts_ms = int(time.time() * 1000)
 
     if not tickers:
+        if tracked.in_phase(MarketPhase.SETTLING):
+            return
         gap_logger.log("empty_ticker_set", "no tickers available for capture")
         stats.errors += 1
         return

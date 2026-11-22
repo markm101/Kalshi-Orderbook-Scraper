@@ -169,7 +169,16 @@ The selector skips multivariate combo markets and markets without bids on both Y
 
 A failed refresh logs `discovery_error`, counts one error, and keeps the current markets until the next refresh. A failed discovery at startup still ends the run.
 
-Picked markets stay on the list until they close. Re-picks run every `--discovery-refresh-seconds` (default 900) and only fill free slots. Every `--status-check-seconds` (default 60), capture checks the status of each tracked market. A market that has closed stops being polled, gets a `market_closed` row in `gaps.csv`, and its result is appended to `metadata/results.csv` once Kalshi reports it. This applies to markets passed with `--tickers` too. A run with only `--tickers` stops by itself once every market has closed, and logs `all_markets_closed`.
+Picked markets hold their slot until they close. Re-picks run every `--discovery-refresh-seconds` (default 900) and only fill free slots. A reopened pick is captured again, even if that puts the run over the pick limit for a while.
+
+Every `--status-check-seconds` (default 60), capture checks each tracked market until it is finalized. This applies to markets passed with `--tickers` too.
+
+- A market that is closed, determined, disputed, amended, or finalized stops being polled and gets a `market_closed` row in `gaps.csv`.
+- A market that Kalshi reopens is polled again and gets a `market_reopened` row.
+- A market left out of a status response keeps its state and gets one `market_missing` row each time it goes missing.
+- A result is appended to `metadata/results.csv` only when the market is finalized. A market still waiting for that at shutdown gets a `result_pending` row.
+
+A run with only `--tickers` stops by itself once every market it found is finalized, and logs `all_markets_closed`. It can wait through a dispute, so use `--duration-seconds` to bound it.
 
 Example filtered selector run:
 
@@ -259,7 +268,7 @@ exports/short_capture/
   spread_depth.csv
 ```
 
-Each ticker gets its own CSV under `orderbooks/`. Category is stored in `metadata/series.csv`, not in every order book row. `metadata/markets.csv` keeps every market captured during the run, including ones that have closed. `metadata/results.csv` has one row per closed market: `ticker,event_ticker,status,result,settlement_value,close_time,settlement_ts`, with `settlement_value` in the same fixed units as prices.
+Each ticker gets its own CSV under `orderbooks/`. Category is stored in `metadata/series.csv`, not in every order book row. `metadata/markets.csv` keeps every market captured during the run, including ones that have closed. `metadata/results.csv` has one row per finalized market: `ticker,event_ticker,status,result,settlement_value,close_time,settlement_ts`, with `settlement_value` in the same fixed units as prices.
 
 ## Order Book CSV
 
