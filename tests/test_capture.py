@@ -102,6 +102,38 @@ class CaptureTest(CaptureTestCase):
         self.assertIn("discovery_error", gap_events(self.output_dir))
         self.assertGreaterEqual(run_errors(self.output_dir), 1)
 
+    def test_failed_refresh_does_not_reserve_a_slot(self):
+        def fail(exchange, path):
+            if path == "/series/T" and not failed:
+                failed.append(path)
+                exchange.markets.pop("T-C")
+                exchange.markets["D"] = market("D", volume_24h_fp="100")
+                raise http_error(503)
+
+        failed = []
+        exchange = Exchange(
+            market("A", volume_24h_fp="300"),
+            series=[{"ticker": "S", "category": "Sports"}, {"ticker": "T", "category": "Sports"}],
+            fail=fail,
+        )
+
+        def replace_a(ex):
+            ex.update("A", status="finalized", result="yes")
+            ex.markets["T-C"] = market("T-C", event_ticker="T-C", volume_24h_fp="900")
+
+        steps = ((lambda ex: ex.polls["A"] >= 4, replace_a),)
+        capture(exchange, self.output_dir, steps=steps, select_liquid=1, discovery_refresh_seconds=0, duration_seconds=0.5)
+        self.assertTrue((self.output_dir / "orderbooks" / "D.csv").exists())
+
+    def test_failed_refresh_waits_for_the_next_scheduled_one(self):
+        def fail(exchange, path):
+            if path.startswith("/series/") and exchange.polls["A"] >= 1:
+                raise http_error(503)
+
+        capture(Exchange(market("A"), fail=fail), self.output_dir,
+                tickers=("A",), discovery_refresh_seconds=0.1, duration_seconds=0.35)
+        self.assertLessEqual(gap_events(self.output_dir).count("discovery_error"), 4)
+
     @known_bug("a mistyped ticker is dropped without a gap")
     def test_unknown_ticker_is_reported(self):
         capture(Exchange(market("A")), self.output_dir, tickers=("A", "TYPO"), once=True)
