@@ -72,7 +72,6 @@ class CaptureTest(CaptureTestCase):
         for text, units in (("1.0000", 10000), ("0.0000", 0), ("0.3350", 3350), (None, None), ("", None)):
             self.assertEqual(market_result({"settlement_value_dollars": text}).settlement_value, units)
 
-    @known_bug("a failed discovery refresh ends the run", type(http_error(503)))
     def test_failed_discovery_refresh_does_not_stop_capture(self):
         def fail(exchange, path):
             if path.startswith("/series/") and exchange.polls["A"] >= 2:
@@ -81,6 +80,27 @@ class CaptureTest(CaptureTestCase):
         exchange = Exchange(market("A"), fail=fail)
         capture(exchange, self.output_dir, lambda ex: ex.polls["A"] >= 6, tickers=("A",), discovery_refresh_seconds=0)
         self.assertGreaterEqual(exchange.polls["A"], 6)
+
+    def test_failed_startup_discovery_is_still_fatal(self):
+        def fail(exchange, path):
+            if path.startswith("/series/"):
+                raise http_error(503)
+
+        with self.assertRaises(type(http_error(503))):
+            capture(Exchange(market("A"), fail=fail), self.output_dir, tickers=("A",))
+        self.assertIn("discovery_error", gap_events(self.output_dir))
+
+    def test_failed_refresh_is_counted_and_later_refresh_recovers(self):
+        def fail(exchange, path):
+            if path.startswith("/series/") and 2 <= exchange.polls["A"] < 4:
+                raise http_error(503)
+
+        exchange = Exchange(market("A"), fail=fail)
+        steps = ((lambda ex: ex.polls["A"] >= 5, lambda ex: ex.markets.update(B=market("B"))),)
+        capture(exchange, self.output_dir, lambda ex: ex.polls["B"] >= 2, steps,
+                series=("S",), discovery_refresh_seconds=0)
+        self.assertIn("discovery_error", gap_events(self.output_dir))
+        self.assertGreaterEqual(run_errors(self.output_dir), 1)
 
     @known_bug("a mistyped ticker is dropped without a gap")
     def test_unknown_ticker_is_reported(self):
