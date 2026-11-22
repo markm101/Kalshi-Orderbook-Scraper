@@ -34,10 +34,20 @@ def derive_rows(raw_row: dict[str, str]):
 
 
 def derive_capture(input_dir: Path, output_dir: Path) -> int:
+    # exists() is false for "new/../run" until mkdir creates "new", so resolve before comparing.
+    input_dir, output_dir = input_dir.resolve(), output_dir.resolve()
+    paths = [
+        (input_path, output_dir / input_path.relative_to(input_dir))
+        for input_path in sorted((input_dir / "orderbooks").glob("*.csv"))
+    ]
+    input_files = {(stat.st_dev, stat.st_ino) for stat in (input_path.stat() for input_path, _ in paths)}
+    for _, output_path in paths:
+        if output_path.exists() and (output_path.stat().st_dev, output_path.stat().st_ino) in input_files:
+            raise ValueError(f"output would overwrite input: {output_path}")
+
     rows_written = 0
     _copy_metadata(input_dir, output_dir)
-    for input_path in sorted((input_dir / "orderbooks").glob("*.csv")):
-        output_path = output_dir / input_path.relative_to(input_dir)
+    for input_path, output_path in paths:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with input_path.open(newline="") as input_file, output_path.open("w", newline="") as output_file:
             reader = csv.DictReader(input_file)
@@ -64,8 +74,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    args = build_parser().parse_args()
-    rows_written = derive_capture(args.input_dir, args.output_dir)
+    parser = build_parser()
+    args = parser.parse_args()
+    try:
+        rows_written = derive_capture(args.input_dir, args.output_dir)
+    except ValueError as exc:
+        parser.error(str(exc))
     print(f"derived_rows_written: {rows_written}")
     return 0
 
