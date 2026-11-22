@@ -4,11 +4,9 @@ from tests.support import BOOK, CaptureTestCase, Exchange, capture, http_error, 
 
 
 class SelectionTest(CaptureTestCase):
-    @known_bug("an unknown selector category crashes", TypeError)
     def test_selector_accepts_category_without_series(self):
         self.assertEqual(select_liquid_tickers(Exchange(), 1, include_categories=("sports",)), ())
 
-    @known_bug("an unknown discovery category crashes", TypeError)
     def test_discovery_accepts_category_without_series(self):
         self.assertEqual(discover_markets(Exchange(), categories=("sports",)).markets, ())
 

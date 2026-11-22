@@ -71,7 +71,15 @@ class CliTest(CaptureTestCase):
         with mock.patch.dict(os.environ, CREDENTIALS), self.assertRaises(SystemExit):
             load_config(["--interval", "nan"])
 
-    @known_bug("--discover-only with --select-liquid blanks existing metadata")
+    def test_unmatched_category_does_not_blank_metadata(self):
+        out = self.output_dir / "out"
+        exchange = Exchange(market("A"))
+        common = ["--output-dir", str(out), "--log-level", "CRITICAL"]
+        run_cli(self.output_dir, exchange, ["--tickers", "A", "--once", *common])
+        run_cli(self.output_dir, exchange, ["--discover-only", "--categories", "sports", *common])
+        self.assertTrue(read_csv(out / "metadata" / "markets.csv"))
+        self.assertTrue(read_csv(out / "metadata" / "series.csv"))
+
     def test_discover_only_does_not_blank_metadata(self):
         out = self.output_dir / "out"
         exchange = Exchange(market("A"))

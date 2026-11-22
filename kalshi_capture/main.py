@@ -41,6 +41,9 @@ def discover_only(config: Config) -> None:
             exclude_categories=config.exclude_categories,
         )
 
+    if not discovery.markets:
+        logging.warning("no markets matched discovery filters; left existing metadata unchanged")
+        return
     write_metadata(config.output_dir, discovery)
     logging.info(
         "wrote metadata markets=%s series=%s output_dir=%s",
